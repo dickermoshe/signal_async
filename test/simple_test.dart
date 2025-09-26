@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:signal_async/signals_async.dart';
+import 'package:signals_async/signals_async.dart';
 import 'package:signals/signals.dart';
 import 'package:test/test.dart';
 

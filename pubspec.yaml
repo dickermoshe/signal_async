@@ -1,16 +1,23 @@
-name: signal_async
-description: A sample command-line application.
+name: signals_async
+description: A reactive asynchronous signal library that extends the signals package with ComputedFuture for handling async operations reactively.
 version: 1.0.0
-# repository: https://github.com/my_org/my_repo
+repository: https://github.com/dickermoshe/signals_async
+homepage: https://github.com/dickermoshe/signals_async
+documentation: https://github.com/dickermoshe/signals_async
+issue_tracker: https://github.com/dickermoshe/signals_async/issues
+
+topics:
+  - signals
+  - reactive
+  - async
+  - future
+  - state-management
 
 environment:
   sdk: ^3.9.0
 
-# Add regular dependencies here.
 dependencies:
-  meta: ^1.16.0
-  path: ^1.9.0
-  signals: ^6.0.2
+  signals: ^6.0.0
 
 dev_dependencies:
   lints: ^6.0.0

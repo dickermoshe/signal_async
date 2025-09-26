@@ -201,6 +201,20 @@ abstract class ComputedFuture<Output, Input>
   }
 }
 
+// class _ComputedStreamImpl<Output> implements ComputedFuture<Output, void> extends Signal<AsyncState<Output>>{
+//   final Stream<Output> stream;
+//   StreamSubscription<Output>? subscription;
+//   _ComputedStreamImpl(this.stream);
+
+//   start() {
+//     StreamSignal
+//     subscription = stream.listen((event) {
+//       value = AsyncState.data(event);
+//     });
+//   }
+
+// }
+
 /// Internal implementation of [ComputedFuture].
 ///
 /// Manages the signal state, effect tracking, and lifecycle. Not intended for
@@ -354,8 +368,10 @@ class FutureState<O> {
     // Completing the completer will only have an effect until the next tick
     // We don't want any race conditions between the completer and the signal
     // so we set the completer first and then the signal
-    __completer.complete(value);
-    __signal.value = AsyncState.data(value);
+    batch(() {
+      __completer.complete(value);
+      __signal.value = AsyncState.data(value);
+    });
   }
 
   /// Completes the async operation with an error.
@@ -365,8 +381,10 @@ class FutureState<O> {
     }
     // The order of operations is important here
     // See _complete for more details
-    __completer.completeError(error, stackTrace);
-    __signal.value = AsyncState.error(error, stackTrace);
+    batch(() {
+      __completer.completeError(error, stackTrace);
+      __signal.value = AsyncState.error(error, stackTrace);
+    });
   }
 
   /// Cancel the async state.

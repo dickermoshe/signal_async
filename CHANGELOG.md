@@ -1,3 +1,11 @@
 ## 1.0.0
 
-- Initial version.
+- Initial release of signals_async
+- Added `ComputedFuture` class for reactive asynchronous computations
+- Support for reactive and non-reactive modes
+- Robust cancellation support with cleanup callbacks
+- Lazy and eager evaluation options
+- Initial value support to prevent loading flickers
+- Auto-disposal capability
+- Comprehensive documentation and examples
+- Batched updates for better performance
