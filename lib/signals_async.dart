@@ -1,393 +1,446 @@
-// ignore_for_file: invalid_use_of_internal_member, depend_on_referenced_packages, implementation_imports
+library;
 
 import 'dart:async';
 
-import 'package:preact_signals/src/node.dart';
 import 'package:signals/signals.dart';
 
-class FutureState<O> {
-  FutureState._();
+typedef ComputedFutureBuilder<Output, Input> =
+    Future<Output> Function(FutureState<Output> state, Input input);
 
-  /// Returns true if this async state has been canceled.
-  bool get isCanceled => __nextCompleter != null;
+/// A reactive asynchronous signal that computes a [Future] based on input signals
+/// or manually via [restart].
+///
+/// `ComputedFuture` extends the signals library to handle asynchronous operations
+/// reactively. It tracks dependencies (via an input signal) and automatically
+/// restarts computations when inputs change, while supporting cancellation,
+/// lazy evaluation, and disposal.
+///
+/// Use the default constructor for reactive scenarios (e.g., API calls driven
+/// by user input). Use [ComputedFuture.nonReactive] for one-off async tasks
+/// (e.g., initial data fetch) that can be manually restarted.
+///
+/// ## Key Features:
+/// - **Reactivity**: Depends on a [ReadonlySignal<Input>] to trigger recomputations.
+/// - **Cancellation**: Supports robust cancellation during restarts or disposal,
+///   preserving awaiters on [future].
+/// - **Lazy Evaluation**: Defaults to lazy (starts on first access); set `lazy: false` for eager.
+/// - **Initial Value**: Optional `initialValue` to avoid loading flickers.
+/// - **Auto-Disposal**: If `autoDispose: true`, cancels on effect disposal.
+/// - **State Management**: Exposes [AsyncState<Output>] via `value`, and raw [Future<Output>] via `future`.
+///
+abstract class ComputedFuture<Output, Input>
+    implements ReadonlySignal<AsyncState<Output>> {
+  Future<Output> get future;
+
+  /// Manually restarts the computation.
+  ///
+  /// Cancels any ongoing future and schedules a new one using the current input
+  /// value (or just the builder in non-reactive mode). Useful for refresh buttons
+  /// or polling.
+  ///
+  /// This will have no effect if the computation is lazy and has not yet started.
+  ///
+  /// ## Example
+  /// ```dart
+  /// fetchData.restart();  // Refresh data manually
+  /// ```
+  void restart();
+
+  /// Creates a reactive [ComputedFuture] that recomputes when [input] changes.
+  ///
+  /// The [futureBuilder] receives the current [FutureState] (for cancellation
+  /// checks) and the input value.
+  ///
+  /// - [input]: The signal to watch for changes.
+  /// - [futureBuilder]: Builds the [Future<Output>] based on state and input.
+  /// - [initialValue]: Optional initial data to show before first computation.
+  /// - [lazy]: If `true` (default), starts on first access; if `false`, eager.
+  /// - [autoDispose]: If `true`, cancels on effect disposal.
+  /// - [debugLabel]: Optional label for debugging (e.g., in signal traces).
+  ///
+  /// ## Example: Basic Reactive Computation
+  /// ```dart
+  /// final input = signal(2);
+  /// final result = ComputedFuture(input, (state, value) async {
+  ///   // Use 'state' for onCancel() or check isCanceled
+  ///   await Future.delayed(Duration(seconds: 1));
+  ///   if (state.isCanceled) return 0;  // Handle cancel gracefully
+  ///   return value * 2;
+  /// });
+  ///
+  /// // Listen to state changes
+  /// effect(() {
+  ///   final state = result.value;
+  ///   if (state is AsyncData<int>) {
+  ///     print('Result: ${state.value}');  // Prints 4 initially
+  ///   }
+  /// });
+  ///
+  /// input.value = 3;  // Triggers recompute, prints 6
+  /// ```
+  ///
+  /// ## Example: Multiple Inputs with Dart Records
+  /// ```dart
+  /// final userId = signal(1);
+  /// final category = signal('electronics');
+  ///
+  /// // Use a computed signal to combine multiple inputs into a record
+  /// final searchParams = computed(() => (userId: userId.value, category: category.value));
+  ///
+  /// final searchResults = ComputedFuture(searchParams, (state, params) async {
+  ///   // Access record fields: params.userId, params.category
+  ///   final response = await http.get(Uri.parse(
+  ///     'https://api.example.com/search?user=${params.userId}&category=${params.category}'
+  ///   ));
+  ///   return jsonDecode(response.body);
+  /// });
+  ///
+  /// // Changing either input triggers a new search
+  /// userId.value = 2;      // Triggers recompute
+  /// category.value = 'books';  // Triggers recompute
+  /// ```
+  ///
+  /// ## Example: Chaining ComputedFutures
+  /// ```dart
+  /// final userId = signal(1);
+  ///
+  /// // First future: fetch user profile
+  /// final userProfile = ComputedFuture(userId, (state, id) async {
+  ///   final response = await http.get(Uri.parse('https://api.example.com/users/$id'));
+  ///   return jsonDecode(response.body);
+  /// });
+  ///
+  /// // Second future depends on the first: fetch user's posts
+  /// // IMPORTANT: Pass the ComputedFuture itself as the input
+  /// final userPosts = ComputedFuture(userProfile, (state, _) async {
+  ///   // Await the previous future to get the user profile
+  ///   final profile = await userProfile.future;
+  ///   final response = await http.get(Uri.parse(
+  ///     'https://api.example.com/posts?author=${profile['username']}'
+  ///   ));
+  ///   return jsonDecode(response.body);
+  /// });
+  ///
+  /// // When userId changes, both futures will recompute in sequence
+  /// userId.value = 2;  // userProfile recomputes, then userPosts recomputes
+  /// ```
+  factory ComputedFuture(
+    ReadonlySignal<Input> input,
+    ComputedFutureBuilder<Output, Input> futureBuilder, {
+    Output? initialValue,
+    bool lazy = true,
+    bool autoDispose = false,
+    String? debugLabel,
+  }) {
+    final result = _ComputedFutureImpl(
+      input,
+      futureBuilder,
+      autoDispose: autoDispose,
+      debugLabel: debugLabel,
+      initialValue: initialValue,
+    );
+
+    if (!lazy) {
+      result.start();
+    }
+    return result;
+  }
+
+  /// Creates a non-reactive [ComputedFuture] that runs independently of signals.
+  ///
+  /// The [futureBuilder] receives only the [FutureState] (no input dependency).
+  /// Computations run on creation (if eager) or first access, and can be manually
+  /// restarted. Ideal for one-off async tasks like initial loads or user-triggered
+  /// actions.
+  ///
+  /// Internally uses a dummy `void` input for compatibility.
+  ///
+  /// - [futureBuilder]: Builds the [Future<Output>] based on state.
+  /// - [initialValue]: Optional initial data to show before first computation.
+  /// - [lazy]: If `true` (default), starts on first access; if `false`, eager.
+  /// - [autoDispose]: If `true`, cancels on effect disposal.
+  /// - [debugLabel]: Optional label for debugging.
+  ///
+  /// ## Example: Non-Reactive with Manual Restart
+  /// ```dart
+  /// final fetchData = ComputedFuture.nonReactive((state) async {
+  ///   // Non-reactive: ignores external signals
+  ///   final response = await http.get(Uri.parse('https://api.example.com/data'));
+  ///   state.onCancel(() => controller?.dispose());  // Cleanup on cancel/restart
+  ///   return jsonDecode(response.body);
+  /// });
+  ///
+  /// effect(() => print(fetchData.value));  // Triggers initial fetch
+  ///
+  /// fetchData.restart();  // Manual refresh, cancels previous if running
+  /// ```
+  static ComputedFuture<Output, void> nonReactive<Output>(
+    Future<Output> Function(FutureState<Output> state) futureBuilder, {
+    Output? initialValue,
+    bool lazy = true,
+    bool autoDispose = false,
+    String? debugLabel,
+  }) {
+    final input = signal(null);
+    Future<Output> wrappedFutureBuilder(
+      FutureState<Output> state,
+      void input,
+    ) => futureBuilder(state);
+    final result = _ComputedFutureImpl<Output, void>(
+      input,
+      wrappedFutureBuilder,
+      autoDispose: autoDispose,
+      debugLabel: debugLabel,
+      initialValue: initialValue,
+    );
+    if (!lazy) {
+      result.start();
+    }
+
+    return result;
+  }
+}
+
+/// Internal implementation of [ComputedFuture].
+///
+/// Manages the signal state, effect tracking, and lifecycle. Not intended for
+/// direct use—use the factory constructors.
+class _ComputedFutureImpl<Output, Input> extends Signal<AsyncState<Output>>
+    implements ComputedFuture<Output, Input> {
+  _ComputedFutureImpl(
+    this.input,
+    this.futureBuilder, {
+    required super.autoDispose,
+    required super.debugLabel,
+    required Output? initialValue,
+  }) : usingInitialValue = initialValue != null,
+       super(
+         initialValue != null
+             ? AsyncState.data(initialValue)
+             : AsyncState.loading(),
+       );
+
+  /// The function to build the future
+  final ComputedFutureBuilder<Output, Input> futureBuilder;
+
+  /// The input signal which will be used to trigger new requests
+  final ReadonlySignal<Input> input;
+
+  /// Whether the signal is still using the initial value
+  bool usingInitialValue;
+
+  // A function to dispose the effect which tracks the input signal
+  // and triggers new requests
+  Function()? disposeEffect;
+
+  /// The state of the current running future
+  /// As futures are canceled and restarted, this object helps with
+  /// managing that transition.
+  FutureState<Output>? futureState;
+
+  /// This will be set to true once we've started making requests.
+  ///
+  /// That will only happen once this signal is depended on, or if lazy has been set to false.
+  bool started = false;
+
+  final counter = signal(0);
+
+  @override
+  void restart() {
+    counter.value++;
+  }
+
+  @override
+  AsyncState<Output> get value {
+    start();
+    return super.value;
+  }
+
+  @override
+  Future<Output> get future {
+    start();
+    return futureState!._future;
+  }
+
+  @override
+  void dispose() {
+    disposeEffect?.call();
+    futureState?._cancel();
+    super.dispose();
+  }
+
+  /// Starts the reactive effect if not already running.
+  ///
+  /// Called implicitly on `value` or `future` access in lazy mode.
+  /// Sets up the effect to watch [input] and [counter] for changes,
+  /// handling restarts and cancellations.
+  void start() {
+    if (started) {
+      return;
+    }
+
+    started = true;
+    disposeEffect = effect(() {
+      // Subscribe to the input signal and counter signals
+      // This will trigger three opperations below whenever either signal changes
+      (counter.value, input.value);
+
+      // 1. Replace the FutureState of the previous execution
+      //    with a new one.
+      final previousState = futureState;
+      futureState = FutureState<Output>._(this);
+
+      // 2. Cancel the previous future state.
+      //    Any awaiters of the previous future state will
+      //    automatically await the new future state.
+      previousState?._cancel(futureState);
+
+      // 3. Start the requests which will update the signal and the current future state
+      // as the future resolves in the background
+      final state = futureState!;
+
+      Future.delayed(Duration.zero)
+          .then((_) {
+            // If the user created the signal with an initial value,
+            // we should show that value until the future resolves
+            if (!usingInitialValue) {
+              if (untracked(() => value) is! AsyncLoading) {
+                value = AsyncState.loading();
+              }
+            }
+          })
+          .then((_) {
+            return futureBuilder(state, untracked(() => input.value));
+          })
+          .then(state._complete)
+          .catchError(state._completeError)
+          .whenComplete(() {
+            usingInitialValue = false;
+          })
+          .ignore();
+    });
+  }
+}
+
+/// Manages the state of an asynchronous operation with cancellation support.
+///
+/// Wraps a [Signal<AsyncState<O>>] and provides methods to complete, cancel,
+/// and track the lifecycle of async operations.
+///
+/// Passed to the [futureBuilder] in [ComputedFuture] to enable cancellation
+/// awareness (e.g., check [isCanceled] or register [onCancel] callbacks).
+/// Handles switching awaiters seamlessly during cancels/restarts.
+class FutureState<O> {
+  final Signal<AsyncState<O>> __signal;
+  FutureState._(this.__signal);
+
+  bool _isCanceled = false;
+
+  /// Returns true if the running future has been canceled.
+  ///
+  /// Check this in the [futureBuilder] to abort work early and avoid
+  /// unnecessary computation after cancel (e.g., on signal change or dispose).
+  bool get isCanceled => _isCanceled;
 
   final List<Function> __cancelFns = [];
 
-  /// Cancel the async state
-  /// If a new state is provided, the future will be replaced with the new state's future
+  /// Completes the async operation with a successful value.
+  void _complete(O value) {
+    if (__completer.isCompleted || isCanceled) {
+      return;
+    }
+    // The order of operations is important here
+    // Setting a signal will trigger the effects syncronously
+    // Completing the completer will only have an effect until the next tick
+    // We don't want any race conditions between the completer and the signal
+    // so we set the completer first and then the signal
+    __completer.complete(value);
+    __signal.value = AsyncState.data(value);
+  }
+
+  /// Completes the async operation with an error.
+  void _completeError(Object error, StackTrace stackTrace) {
+    if (__completer.isCompleted || isCanceled) {
+      return;
+    }
+    // The order of operations is important here
+    // See _complete for more details
+    __completer.completeError(error, stackTrace);
+    __signal.value = AsyncState.error(error, stackTrace);
+  }
+
+  /// Cancel the async state.
+  ///
+  /// Replaces the current [Completer] with a new one (from [newState] if provided,
+  /// or a failed one on dispose). Executes all [onCancel] callbacks in order.
+  /// Awaiters on [_future] automatically switch to the next completer.
+  ///
+  /// If no [newState], completes with a disposal error.
+  ///
+  /// Internal: Called on signal changes, restarts, or dispose.
   void _cancel([FutureState<O>? newState]) {
     // Never cancel a future state twice
     if (!isCanceled) {
-      // If a new state is provided, use its completer
-      if (newState != null) {
-        __nextCompleter = newState.__completer;
-      } else {
-        // If we are disposing the future state without a replacement, complete with an error
-        final newCompleter = Completer<O>()
-          ..completeError(
-            Exception("Signal was disposed before the future was completed"),
-          );
-        __nextCompleter = newCompleter;
-      }
-      // Crash the current completer so that any awaiters of `_future` will instantly
-      // start await the _nextCompleter
-      __completer.completeError(Exception("Future state was disposed"));
+      _isCanceled = true;
+      __nextState = newState;
 
       // Execute all the cancel callbacks
       for (var cancelFn in __cancelFns) {
-        cancelFn();
+        try {
+          cancelFn();
+        } catch (e) {
+          // ignore: empty_catches
+        }
+      }
+      // Crash the current completer so that any awaiters of `_future` will instantly
+      // start await the __nextState
+      if (!__completer.isCompleted) {
+        __completer.completeError(
+          StateError("Signal was disposed before the future was completed"),
+        );
       }
     }
   }
 
   /// Adds a cancel callback to be executed when this async state is canceled.
   ///
-  /// The callback will be called in addition to the default cancel behavior.
-  /// Multiple callbacks can be added and will be executed in the order they were added.
+  /// Callbacks run in addition to default cancellation, in the order added.
+  /// Useful for cleanup (e.g., closing streams, aborting HTTP requests).
+  ///
+  /// Errors in callbacks are caught and ignored to ensure all run.
+  ///
+  /// ## Multiple Callbacks
+  /// ```dart
+  /// state.onCancel(() => stream1.cancel());  // First
+  /// state.onCancel(() => timer.cancel());    // Executes after first
+  /// ```
+  ///
+  /// Call this early in the [futureBuilder]—before async work starts.
   void onCancel(Function newOnCancel) {
     __cancelFns.add(newOnCancel);
   }
 
   final __completer = Completer<O>();
-  Completer<O>? __nextCompleter;
+  FutureState<O>? __nextState;
 
+  /// Returns the future that will complete when the async operation finishes.
+  ///
+  /// Handles cancellation by switching to the next completer if canceled.
+  /// Awaiters are preserved across switches (e.g., during restarts).
+  ///
+  /// Internal: Accessed via [ComputedFuture.future].
   Future<O> get _future async {
     try {
       final result = await __completer.future;
       if (isCanceled) {
-        return __nextCompleter!.future;
+        return __nextState!._future;
       }
       return result;
     } catch (e) {
       if (isCanceled) {
-        return __nextCompleter!.future;
+        return __nextState!._future;
       }
       rethrow;
     }
-  }
-}
-
-abstract class ComputedFuture<T> implements ReadonlySignal<AsyncState<T>> {
-  Signal<AsyncState<T>> get _signal;
-  void _start();
-  FutureState<T>? _futureState;
-
-  Future<T> get future {
-    if (_futureState == null) {
-      _start();
-    }
-    return _futureState!._future;
-  }
-
-  ComputedFuture._();
-
-  static ComputedFuture<T> withSignal<T, I>(
-    ReadonlySignal<I> input,
-    Future<T> Function(FutureState<T> state, I input) futureBuilder, {
-    bool lazy = true,
-    T? initialValue,
-    String? debugLabel,
-    bool autoDispose = false,
-  }) {
-    return ComputedFutureWithDeps._(
-      input,
-      futureBuilder,
-      lazy: lazy,
-      initialValue: initialValue,
-      debugLabel: debugLabel,
-      autoDispose: autoDispose,
-    );
-  }
-
-  factory ComputedFuture(
-    Future<T> Function(FutureState<T> state) futureBuilder, {
-    bool lazy = true,
-    T? initialValue,
-    String? debugLabel,
-    bool autoDispose = false,
-  }) {
-    return ComputedFutureWithoutDeps._(
-      futureBuilder,
-      lazy: lazy,
-      initialValue: initialValue,
-      debugLabel: debugLabel,
-      autoDispose: autoDispose,
-    );
-  }
-
-  @override
-  bool get autoDispose => _signal.autoDispose;
-
-  @override
-  bool get disposed => _signal.disposed;
-
-  @override
-  Node? get node => _signal.node;
-
-  @override
-  Node? get targets => _signal.targets;
-
-  @override
-  void afterCreate(AsyncState<T> val) {
-    _signal.afterCreate(val);
-  }
-
-  @override
-  void beforeUpdate(AsyncState<T> val) {
-    _signal.beforeUpdate(val);
-  }
-
-  @override
-  Symbol get brand => _signal.brand;
-
-  @override
-  AsyncState<T> call() {
-    return _signal.call();
-  }
-
-  @override
-  String? get debugLabel => _signal.debugLabel;
-
-  @override
-  AsyncState<T> get() {
-    return _signal.get();
-  }
-
-  @override
-  int get globalId => _signal.globalId;
-
-  @override
-  bool internalRefresh() {
-    return _signal.internalRefresh();
-  }
-
-  @override
-  AsyncState<T> get internalValue => _signal.internalValue;
-
-  @override
-  bool get isInitialized => _signal.isInitialized;
-
-  @override
-  EffectCleanup onDispose(void Function() cleanup) {
-    return _signal.onDispose(cleanup);
-  }
-
-  @override
-  AsyncState<T> peek() {
-    return _signal.peek();
-  }
-
-  @override
-  void Function() subscribe(void Function(AsyncState<T> value) fn) {
-    return _signal.subscribe(fn);
-  }
-
-  @override
-  void subscribeToNode(Node node) {
-    _signal.subscribeToNode(node);
-  }
-
-  @override
-  toJson() {
-    return _signal.toJson();
-  }
-
-  @override
-  void unsubscribeFromNode(Node node) {
-    _signal.unsubscribeFromNode(node);
-  }
-
-  @override
-  AsyncState<T> get value {
-    _start();
-    return _signal.value;
-  }
-
-  @override
-  int get version => _signal.version;
-
-  @override
-  set autoDispose(bool autoDispose) {
-    _signal.autoDispose = autoDispose;
-  }
-
-  @override
-  set disposed(bool value) {
-    _signal.disposed = value;
-  }
-
-  @override
-  set node(Node? node) {
-    _signal.node = node;
-  }
-
-  @override
-  set targets(Node? targets) {
-    _signal.targets = targets;
-  }
-
-  @override
-  void dispose() {
-    _signal.dispose();
-  }
-}
-
-class ComputedFutureWithDeps<T, I> extends ComputedFuture<T> {
-  final Future<T> Function(FutureState<T> state, I input) _futureBuilder;
-  final ReadonlySignal<I> _input;
-
-  @override
-  late final Signal<AsyncState<T>> _signal;
-
-  ComputedFutureWithDeps._(
-    this._input,
-    this._futureBuilder, {
-    bool lazy = true,
-    T? initialValue,
-    String? debugLabel,
-    bool autoDispose = false,
-  }) : super._() {
-    if (initialValue != null) {
-      _signal = Signal(
-        AsyncState.data(initialValue),
-        autoDispose: autoDispose,
-        debugLabel: debugLabel,
-      );
-    } else {
-      _signal = Signal(
-        AsyncState.loading(),
-        autoDispose: autoDispose,
-        debugLabel: debugLabel,
-      );
-    }
-    if (!lazy) {
-      _start();
-    }
-    _signal.onDispose(() {
-      // Dispose the effect so that any changes to the input signal will be ignored
-      _dispose?.call();
-      // Cancel the current future state so that any awaiters of
-      // the previous future state will crash
-      _futureState?._cancel();
-    });
-  }
-
-  Function()? _dispose;
-
-  @override
-  void _start() {
-    if (_dispose != null) {
-      return;
-    }
-    _dispose = effect(() {
-      // Subscribe to the input signal
-      // This will trigger three opperations below
-      _input.value;
-
-      // 1. Replace the FutureState of the previous execution
-      //    with a new one.
-      final currentState = _futureState;
-      _futureState = FutureState<T>._();
-      // 2. Cancel the previous future state.
-      //    Any awaiters of the previous future state will
-      //    automatically await the new future state.
-      _futureState?._cancel(currentState);
-
-      // 3. Start the requests which will update the signal and the current future state
-      // as the future resolves in the background
-      final state = _futureState!;
-      Future(() async {
-        try {
-          if (state.isCanceled) return;
-          _signal.value = AsyncState.loading();
-          final result = await untracked(
-            () => _futureBuilder(state, untracked(() => _input.value)),
-          );
-          if (state.isCanceled) return;
-          state.__completer.complete(result);
-          _signal.value = AsyncState.data(result);
-        } catch (e, s) {
-          if (state.isCanceled) return;
-          state.__completer.completeError(e, s);
-          _signal.value = AsyncState.error(e, s);
-        }
-      });
-    });
-  }
-}
-
-class ComputedFutureWithoutDeps<T> extends ComputedFuture<T> {
-  final Future<T> Function(FutureState<T> state) _futureBuilder;
-
-  @override
-  late final Signal<AsyncState<T>> _signal;
-
-  ComputedFutureWithoutDeps._(
-    this._futureBuilder, {
-    bool lazy = true,
-    T? initialValue,
-    String? debugLabel,
-    bool autoDispose = false,
-  }) : super._() {
-    if (initialValue != null) {
-      _signal = Signal(
-        AsyncState.data(initialValue),
-        autoDispose: autoDispose,
-        debugLabel: debugLabel,
-      );
-    } else {
-      _signal = Signal(
-        AsyncState.loading(),
-        autoDispose: autoDispose,
-        debugLabel: debugLabel,
-      );
-    }
-    if (!lazy) {
-      _start();
-    }
-    _signal.onDispose(() {
-      // Dispose the effect so that any changes to the input signal will be ignored
-      _dispose?.call();
-      // Cancel the current future state so that any awaiters of
-      // the previous future state will crash
-      _futureState?._cancel();
-    });
-  }
-
-  Function()? _dispose;
-
-  @override
-  void _start() {
-    if (_dispose != null) {
-      return;
-    }
-    _dispose = effect(() {
-      // 1. Replace the FutureState of the previous execution
-      //    with a new one.
-      final currentState = _futureState;
-      _futureState = FutureState<T>._();
-      // 2. Cancel the previous future state.
-      //    Any awaiters of the previous future state will
-      //    automatically await the new future state.
-      _futureState?._cancel(currentState);
-
-      // 3. Start the requests which will update the signal and the current future state
-      // as the future resolves in the background
-      final state = _futureState!;
-      Future(() async {
-        try {
-          if (state.isCanceled) return;
-          _signal.value = AsyncState.loading();
-          final result = await untracked(() => _futureBuilder(state));
-          if (state.isCanceled) return;
-          state.__completer.complete(result);
-          _signal.value = AsyncState.data(result);
-        } catch (e, s) {
-          if (state.isCanceled) return;
-          state.__completer.completeError(e, s);
-          _signal.value = AsyncState.error(e, s);
-        }
-      });
-    });
   }
 }
