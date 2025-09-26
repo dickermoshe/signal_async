@@ -817,7 +817,6 @@ void main() async {
 
       // Latest direct access also gets final
       expect(computed.value.value, 30);
-      print(events);
 
       // Verify events: starts for all, cancels for all but last, no 'complete' for canceled
       expect(events.where((e) => e.startsWith('start_')).toList(), [
@@ -832,7 +831,6 @@ void main() async {
       expect(events, contains('complete_3'));
       expect(events, isNot(contains('complete_1')));
       expect(events, isNot(contains('complete_2')));
-      print(events);
     });
     mytest('chain with unhandled upstream error', () async {
       final number = signal(5); // Triggers upstream error
@@ -1155,5 +1153,245 @@ void main() async {
     await Future.delayed(Duration(milliseconds: 50));
     expect(cancelEvents, ['cleanup1_1', 'cleanup2_1']);
     expect(chainContinued, true);
+  });
+
+  group("restart functionality", () {
+    mytest('restart() restarts non-reactive ComputedFuture', () async {
+      int executionCount = 0;
+      String currentResult = '';
+
+      final computed = ComputedFuture.nonReactive((state) async {
+        executionCount++;
+        await Future.delayed(Duration(milliseconds: 10));
+        currentResult = 'execution_$executionCount';
+        return currentResult;
+      });
+
+      // Start initial computation
+      effect(() {
+        computed.value;
+      });
+
+      await Future.delayed(Duration(milliseconds: 50));
+      expect(executionCount, 1);
+      expect(computed.value.value, 'execution_1');
+
+      // Restart the computation
+      computed.restart();
+      await Future.delayed(Duration(milliseconds: 50));
+
+      expect(executionCount, 2);
+      expect(computed.value.value, 'execution_2');
+    });
+
+    mytest(
+      'restart() restarts reactive ComputedFuture with same input',
+      () async {
+        final input = signal(5);
+        int executionCount = 0;
+
+        final computed = ComputedFuture(input, (state, value) async {
+          executionCount++;
+          await Future.delayed(Duration(milliseconds: 10));
+          return 'result_${executionCount}_$value';
+        });
+
+        // Start initial computation
+        effect(() {
+          computed.value;
+        });
+
+        await Future.delayed(Duration(milliseconds: 50));
+        expect(executionCount, 1);
+        expect(computed.value.value, 'result_1_5');
+
+        // Restart with same input value
+        computed.restart();
+        await Future.delayed(Duration(milliseconds: 50));
+
+        expect(executionCount, 2);
+        expect(computed.value.value, 'result_2_5');
+      },
+    );
+
+    mytest(
+      'restart() cancels ongoing computation before starting new one',
+      () async {
+        final events = <String>[];
+
+        final computed = ComputedFuture.nonReactive((state) async {
+          events.add('started');
+          state.onCancel(() => events.add('canceled'));
+
+          await Future.delayed(Duration(milliseconds: 20));
+
+          if (state.isCanceled) {
+            events.add('was_canceled');
+            return 'canceled_result';
+          }
+
+          events.add('completed');
+          return 'result';
+        });
+
+        // Start computation
+        final dispose = effect(() {
+          computed.value;
+        });
+
+        await Future.delayed(
+          Duration(milliseconds: 10),
+        ); // Let it start but not complete
+
+        // Restart should cancel the first one
+        computed.restart();
+
+        await Future.delayed(
+          Duration(milliseconds: 40),
+        ); // Let second one complete
+
+        // Should have at least these events - order might vary
+        expect(events, contains('started'));
+        expect(events, contains('canceled'));
+        expect(events, contains('completed'));
+        expect(events.where((e) => e == 'started').length, 2);
+        expect(events.where((e) => e == 'canceled').length, 1);
+        expect(events.where((e) => e == 'completed').length, 1);
+
+        dispose(); // Clean up
+      },
+    );
+
+    mytest(
+      'restart() on lazy ComputedFuture that has not started has no effect',
+      () async {
+        int executionCount = 0;
+
+        final computed = ComputedFuture.nonReactive((state) async {
+          executionCount++;
+          await Future.delayed(Duration(milliseconds: 10));
+          return 'result_$executionCount';
+        }); // lazy by default
+
+        // Restart before starting - should have no effect
+        computed.restart();
+        await Future.delayed(Duration(milliseconds: 20));
+
+        expect(executionCount, 0); // Should not have started
+
+        // Now start it
+        effect(() {
+          computed.value;
+        });
+
+        await Future.delayed(Duration(milliseconds: 20));
+        expect(executionCount, 1);
+        expect(computed.value.value, 'result_1');
+      },
+    );
+
+    mytest('restart() works with future property', () async {
+      int executionCount = 0;
+
+      final computed = ComputedFuture.nonReactive((state) async {
+        executionCount++;
+        await Future.delayed(Duration(milliseconds: 10));
+        return executionCount * 10;
+      });
+
+      // Start computation
+      effect(() {
+        computed.value;
+      });
+
+      final firstResult = await computed.future;
+      expect(firstResult, 10);
+      expect(executionCount, 1);
+
+      // Restart and get new future result
+      computed.restart();
+      final secondResult = await computed.future;
+
+      expect(secondResult, 20);
+      expect(executionCount, 2);
+    });
+
+    mytest('multiple restart() calls queue properly', () async {
+      int executionCount = 0;
+      final events = <String>[];
+
+      final computed = ComputedFuture.nonReactive((state) async {
+        final currentExecution = ++executionCount;
+        events.add('start_$currentExecution');
+
+        state.onCancel(() => events.add('cancel_$currentExecution'));
+
+        await Future.delayed(Duration(milliseconds: 25));
+
+        if (state.isCanceled) {
+          events.add('was_canceled_$currentExecution');
+          throw Exception('Canceled');
+        }
+
+        events.add('complete_$currentExecution');
+        return 'result_$currentExecution';
+      });
+
+      // Start computation
+      effect(() {
+        computed.value;
+      });
+
+      await Future.delayed(Duration(milliseconds: 10));
+
+      // Multiple rapid restarts
+      computed.restart();
+      await Future.delayed(Duration(milliseconds: 5));
+      computed.restart();
+      await Future.delayed(Duration(milliseconds: 5));
+      computed.restart();
+
+      await Future.delayed(Duration(milliseconds: 50));
+
+      // Should see cancellations and only the last one completing
+      expect(events.where((e) => e.startsWith('start_')).length, 4);
+      expect(events.where((e) => e.startsWith('cancel_')).length, 3);
+      expect(events, contains('complete_4'));
+      expect(events, isNot(contains('complete_1')));
+      expect(events, isNot(contains('complete_2')));
+      expect(events, isNot(contains('complete_3')));
+    });
+
+    mytest('restart() with error handling', () async {
+      int executionCount = 0;
+
+      final computed = ComputedFuture.nonReactive((state) async {
+        executionCount++;
+        await Future.delayed(Duration(milliseconds: 10));
+
+        if (executionCount == 1) {
+          throw Exception('First execution error');
+        }
+
+        return 'success_$executionCount';
+      });
+
+      // Start computation - should fail
+      effect(() {
+        computed.value;
+      });
+
+      await Future.delayed(Duration(milliseconds: 50));
+      expect(executionCount, 1);
+      expect(computed.value.hasError, true);
+
+      // Restart should succeed
+      computed.restart();
+      await Future.delayed(Duration(milliseconds: 50));
+
+      expect(executionCount, 2);
+      expect(computed.value.hasError, false);
+      expect(computed.value.value, 'success_2');
+    });
   });
 }
