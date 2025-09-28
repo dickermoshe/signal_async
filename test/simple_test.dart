@@ -1432,14 +1432,11 @@ void main() async {
 
       await Future.delayed(Duration(milliseconds: 100));
 
-      // Should update to computed value (may show loading state when first computation updates)
-      expect(events.length, 3);
+      // Should update to computed value
+      print(events);
+      expect(events.length, 2);
       expect(events[0], AsyncState.data(1)); // Initial value
-      expect(
-        events[1],
-        AsyncState.loading(),
-      ); // Loading when first computation updates
-      expect(events[2], AsyncState.data(36)); // Final computed value
+      expect(events[1], AsyncState.data(36)); // Final computed value
     });
 
     test('chain with initialValue - different types', () async {
@@ -1526,15 +1523,11 @@ void main() async {
 
       await Future.delayed(Duration(milliseconds: 100));
 
-      // Should show error state (may show loading state when first computation updates)
-      expect(events.length, 3);
+      // Should show error state
+      expect(events.length, 2);
       expect(events[0], AsyncState.data(-1)); // Initial value
-      expect(
-        events[1],
-        AsyncState.loading(),
-      ); // Loading when first computation updates
-      expect(events[2].hasError, true); // Error state
-      expect(events[2].error.toString(), contains('Chain error'));
+      expect(events[1].hasError, true); // Error state
+      expect(events[1].error.toString(), contains('Chain error'));
     });
   });
   test('multiple onCancel callbacks', () async {

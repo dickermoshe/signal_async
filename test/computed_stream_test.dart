@@ -390,7 +390,7 @@ void main() async {
         },
       );
       test(
-        'disposing stream without any data does not cause future timeout and throws a StateError',
+        'disposing stream without any data does not cause future timeout and throws a CanceledException',
         () async {
           final controller = StreamController<int>();
           final computed = ComputedStream(() => controller.stream);
@@ -405,7 +405,7 @@ void main() async {
             await futureResult.timeout(Duration(milliseconds: 100));
             fail('Expected exception to be thrown');
           } catch (e) {
-            expect(e, isA<StateError>());
+            expect(e, isA<CanceledException>());
           }
 
           controller.close();

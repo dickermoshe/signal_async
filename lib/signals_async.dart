@@ -181,14 +181,9 @@ abstract class ComputedFuture<Output, Input>
     bool autoDispose = false,
     String? debugLabel,
   }) {
-    final input = signal(null);
-    Future<Output> wrappedFutureBuilder(
-      FutureState<Output> state,
-      void input,
-    ) => futureBuilder(state);
     final result = _ComputedFutureImpl<Output, void>(
-      input,
-      wrappedFutureBuilder,
+      signal(null),
+      (FutureState<Output> state, void input) => futureBuilder(state),
       autoDispose: autoDispose,
       debugLabel: debugLabel,
       initialValue: initialValue,
@@ -299,9 +294,8 @@ class _ComputedStreamImpl<Output> extends Signal<AsyncState<Output>>
     implements ComputedStream<Output> {
   final Stream<Output> Function() streamBuilder;
 
-  /// The subscription to the stream
   StreamSubscription<Output>? subscription;
-  Completer<Output> completer = Completer<Output>()..future.ignore();
+  Completer<Output> completer = Completer<Output>.sync()..future.ignore();
 
   _ComputedStreamImpl(
     this.streamBuilder, {
@@ -352,9 +346,7 @@ class _ComputedStreamImpl<Output> extends Signal<AsyncState<Output>>
   void dispose() {
     subscription?.cancel();
     if (!completer.isCompleted) {
-      completer.completeError(
-        StateError('Signal was disposed before the future was completed'),
-      );
+      completer.completeError(CanceledException());
     }
     super.dispose();
   }
@@ -393,27 +385,16 @@ class _ComputedFutureImpl<Output, Input> extends Signal<AsyncState<Output>>
              : AsyncState.loading(),
        );
 
-  /// The function to build the future
   final ComputedFutureBuilder<Output, Input> futureBuilder;
 
-  /// The input signal which will be used to trigger new requests
   final ReadonlySignal<Input> input;
 
-  /// Whether the signal is still using the initial value
   bool usingInitialValue;
 
-  // A function to dispose the effect which tracks the input signal
-  // and triggers new requests
-  Function()? disposeEffect;
+  Function()? stop;
 
-  /// The state of the current running future
-  /// As futures are canceled and restarted, this object helps with
-  /// managing that transition.
   FutureState<Output>? futureState;
 
-  /// This will be set to true once we've started making requests.
-  ///
-  /// That will only happen once this signal is depended on, or if lazy has been set to false.
   bool started = false;
 
   final counter = signal(0);
@@ -437,7 +418,7 @@ class _ComputedFutureImpl<Output, Input> extends Signal<AsyncState<Output>>
 
   @override
   void dispose() {
-    disposeEffect?.call();
+    stop?.call();
     futureState?._cancel();
     super.dispose();
   }
@@ -453,7 +434,7 @@ class _ComputedFutureImpl<Output, Input> extends Signal<AsyncState<Output>>
     }
 
     started = true;
-    disposeEffect = effect(() {
+    stop = effect(() {
       // Subscribe to the input signal and counter signals
       // This will trigger three operations below whenever either signal changes
       (counter.value, input.value);
@@ -471,48 +452,32 @@ class _ComputedFutureImpl<Output, Input> extends Signal<AsyncState<Output>>
       // 3. Start the requests which will update the signal and the current future state
       // as the future resolves in the background
       final state = futureState!;
-      Future.delayed(Duration.zero)
-          .then((_) {
-            // If the user created the signal with an initial value,
-            // we should show that value until the future resolves
-            if (!usingInitialValue) {
-              if (untracked(() => value) is! AsyncLoading) {
-                value = AsyncState.loading();
-              }
-            }
-          })
-          .then((_) {
-            Future<Output> inner() async {
-              if (state.isCanceled) {
-                throw StateError(
-                  'Signal was disposed before the future was completed',
-                );
-              }
-              final value = untracked(() => input.value);
-              final future = untracked(() => futureBuilder(state, value));
-              return future;
-            }
-
-            return inner();
-          })
-          .then(state._complete)
-          .catchError(state._completeError)
-          .whenComplete(() {
-            usingInitialValue = false;
-          })
-          .ignore();
+      Future.microtask(() => schedule(state, input.value)).ignore();
     });
+  }
+
+  void schedule(FutureState<Output> state, Input input) async {
+    if (state.isCanceled) {
+      throw CanceledException();
+    }
+    if (!usingInitialValue) {
+      if (untracked(() => value) is! AsyncLoading) {
+        value = AsyncState.loading();
+      }
+    }
+    final future = untracked(() => futureBuilder(state, input));
+    try {
+      final result = await future;
+      state._complete(result);
+    } catch (e) {
+      state._completeError(e, StackTrace.current);
+    } finally {
+      usingInitialValue = false;
+    }
   }
 }
 
 /// Manages the state of an asynchronous operation with cancellation support.
-///
-/// Wraps a [Signal<AsyncState<O>>] and provides methods to complete, cancel,
-/// and track the lifecycle of async operations.
-///
-/// Passed to the [futureBuilder] in [ComputedFuture] to enable cancellation
-/// awareness (e.g., check [isCanceled] or register [onCancel] callbacks).
-/// Handles switching awaiters seamlessly during cancels/restarts.
 class FutureState<O> {
   final Signal<AsyncState<O>> __signal;
   FutureState._(this.__signal);
@@ -520,14 +485,10 @@ class FutureState<O> {
   bool _isCanceled = false;
 
   /// Returns true if the running future has been canceled.
-  ///
-  /// Check this in the [futureBuilder] to abort work early and avoid
-  /// unnecessary computation after cancel (e.g., on signal change or dispose).
   bool get isCanceled => _isCanceled;
 
   final List<Function> __cancelFns = [];
 
-  /// Completes the async operation with a successful value.
   void _complete(O value) {
     if (__completer.isCompleted || isCanceled) {
       return;
@@ -543,7 +504,6 @@ class FutureState<O> {
     });
   }
 
-  /// Completes the async operation with an error.
   void _completeError(Object error, StackTrace stackTrace) {
     if (__completer.isCompleted || isCanceled) {
       return;
@@ -556,22 +516,11 @@ class FutureState<O> {
     });
   }
 
-  /// Cancel the async state.
-  ///
-  /// Replaces the current [Completer] with a new one (from [newState] if provided,
-  /// or a failed one on dispose). Executes all [onCancel] callbacks in order.
-  /// Awaiters on [_future] automatically switch to the next completer.
-  ///
-  /// If no [newState], completes with a disposal error.
-  ///
-  /// Internal: Called on signal changes, restarts, or dispose.
   void _cancel([FutureState<O>? newState]) {
-    // Never cancel a future state twice
     if (!isCanceled) {
       _isCanceled = true;
       __nextState = newState;
 
-      // Execute all the cancel callbacks
       for (var cancelFn in __cancelFns) {
         try {
           cancelFn();
@@ -579,12 +528,9 @@ class FutureState<O> {
           // ignore: empty_catches
         }
       }
-      // Crash the current completer so that any awaiters of `_future` will instantly
-      // start await the __nextState
+
       if (!__completer.isCompleted) {
-        __completer.completeError(
-          StateError("Signal was disposed before the future was completed"),
-        );
+        __completer.completeError(CanceledException());
       }
     }
   }
@@ -607,15 +553,9 @@ class FutureState<O> {
     __cancelFns.add(newOnCancel);
   }
 
-  final __completer = Completer<O>()..future.ignore();
+  final __completer = Completer<O>.sync()..future.ignore();
   FutureState<O>? __nextState;
 
-  /// Returns the future that will complete when the async operation finishes.
-  ///
-  /// Handles cancellation by switching to the next completer if canceled.
-  /// Awaiters are preserved across switches (e.g., during restarts).
-  ///
-  /// Internal: Accessed via [ComputedFuture.future].
   Future<O> get _future async {
     try {
       final result = await __completer.future;
@@ -629,5 +569,14 @@ class FutureState<O> {
       }
       rethrow;
     }
+  }
+}
+
+class CanceledException implements Exception {
+  CanceledException();
+
+  @override
+  String toString() {
+    return "CanceledException: Signal was disposed before the future was completed";
   }
 }
