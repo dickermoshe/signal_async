@@ -1,10 +1,11 @@
 # signals_async
 
-A reactive asynchronous signal library for Dart that extends the [signals](https://pub.dev/packages/signals) package with `ComputedFuture` - a powerful way to handle asynchronous operations reactively.
+A reactive asynchronous signal library for Dart that extends the [signals](https://pub.dev/packages/signals) package with `ComputedFuture` and `ComputedStream` - powerful ways to handle asynchronous operations and streams reactively.
 
 ## Features
 
 - **Reactive Async Operations**: `ComputedFuture` automatically recomputes when input signals change
+- **Stream Integration**: `ComputedStream` wraps any Dart stream into a reactive signal
 - **Cancellation Support**: Robust cancellation during restarts or disposal, preserving awaiters
 - **Lazy Evaluation**: Defaults to lazy loading (starts on first access) with eager option available
 - **Initial Values**: Optional initial values to avoid loading flickers
@@ -27,12 +28,13 @@ dependencies:
 
 ```dart
 import 'package:signals_async/signals_async.dart';
+import 'package:signals/signals.dart';
 
 final input = signal(2);
 final result = ComputedFuture(input, (state, value) async {
   // Use 'state' for cancellation checks
   await Future.delayed(Duration(seconds: 1));
-  if (state.isCanceled){
+  if (state.isCanceled) {
     throw Exception('Cancelled');
   }
   return value * 2;
@@ -52,6 +54,11 @@ input.value = 3;  // Triggers recompute, prints 6
 ### Multiple Inputs with Records
 
 ```dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:signals_async/signals_async.dart';
+import 'package:signals/signals.dart';
+
 final userId = signal(1);
 final category = signal('electronics');
 
@@ -73,6 +80,11 @@ category.value = 'books';   // Triggers recompute
 ### Chaining ComputedFutures
 
 ```dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:signals_async/signals_async.dart';
+import 'package:signals/signals.dart';
+
 final userId = signal(1);
 
 // First future: fetch user profile
@@ -97,6 +109,11 @@ userId.value = 2;
 ### Non-Reactive Mode
 
 ```dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:signals_async/signals_async.dart';
+import 'package:signals/signals.dart';
+
 final fetchData = ComputedFuture.nonReactive((state) async {
   final response = await http.get(Uri.parse('https://api.example.com/data'));
   state.onCancel(() => controller?.dispose());  // Cleanup on cancel
@@ -111,6 +128,10 @@ fetchData.restart();  // Manual refresh
 ### Cancellation and Cleanup
 
 ```dart
+import 'package:dio/dio.dart';
+import 'package:signals_async/signals_async.dart';
+import 'package:signals/signals.dart';
+
 final apiCall = ComputedFuture(input, (state, value) async {
   final cancelToken = CancelToken();
   
@@ -120,6 +141,59 @@ final apiCall = ComputedFuture(input, (state, value) async {
   final response = await dio.get('/api/data', cancelToken: cancelToken);
   return response.data;
   
+});
+```
+
+### ComputedStream
+
+`ComputedStream` wraps any Dart Stream into a reactive signal, automatically managing subscriptions and exposing the latest stream value.
+
+```dart
+import 'dart:async';
+import 'package:signals_async/signals_async.dart';
+import 'package:signals/signals.dart';
+
+// Basic stream usage
+final controller = StreamController<int>();
+final streamSignal = ComputedStream(() => controller.stream);
+
+effect(() {
+  final state = streamSignal.value;
+  if (state.hasValue) {
+    print('Stream value: ${state.value}');
+  } else if (state.hasError) {
+    print('Stream error: ${state.error}');
+  }
+});
+
+controller.add(42);  // Prints: Stream value: 42
+controller.add(100); // Prints: Stream value: 100
+controller.close();
+```
+
+#### Stream with Initial Value
+
+```dart
+final dataStream = ComputedStream(
+  () => Stream.periodic(Duration(seconds: 1), (i) => i),
+  initialValue: -1, // Show this before first stream value
+);
+
+effect(() {
+  print('Current value: ${dataStream.value.value}'); // Prints -1 immediately
+});
+```
+
+#### Integration with ComputedFuture
+
+```dart
+// Stream provides data, Future processes it
+final dataStream = ComputedStream(() => someDataStream);
+final processedFuture = ComputedFuture(dataStream, (state, streamState) async {
+  if (!streamState.hasValue) return null;
+  
+  // Process the stream value
+  return await processData(streamState.value);
 });
 ```
 
@@ -142,6 +216,19 @@ The main class for reactive asynchronous computations.
 #### Methods
 
 - `restart()` - Manually restarts the computation
+
+### ComputedStream
+
+A reactive signal that wraps Dart streams.
+
+#### Constructor
+
+- `ComputedStream(streamBuilder, {...})` - Creates a stream-based reactive signal
+
+#### Properties
+
+- `value` - Returns the current `AsyncState<T>` with the latest stream value
+- `future` - Returns a `Future<T>` that completes with the next stream value
 
 ### FutureState
 

@@ -712,6 +712,7 @@ void main() async {
       });
 
       // Rapidly change the signal
+      await Future.delayed(Duration(milliseconds: 5));
       number.value = 2;
       await Future.delayed(Duration(milliseconds: 5));
       number.value = 3;
