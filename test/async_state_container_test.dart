@@ -131,6 +131,41 @@ void main() async {
         },
       );
 
+      test(
+        'null initial value defaults to loading state (current behavior)',
+        () async {
+          final container = AsyncStateContainer<String?>(
+            (state) async => 'computed',
+            initialValue: null,
+          );
+
+          // Current implementation: null initialValue is treated as no initial value
+          expect(container.state, AsyncState.loading());
+
+          // After computation, should have computed result
+          final result = await container.future;
+          expect(result, 'computed');
+          expect(container.state.hasValue, true);
+          expect(container.state.value, 'computed');
+        },
+      );
+
+      test('explicit null value in non-nullable context', () async {
+        // This test shows how to work with null values in the current implementation
+        String? explicitNull;
+        final container = AsyncStateContainer<String?>(
+          (state) async => explicitNull,
+        );
+
+        // Without initial value, starts as loading
+        expect(container.state, AsyncState.loading());
+
+        final result = await container.future;
+        expect(result, null);
+        expect(container.state.hasValue, true);
+        expect(container.state.value, null);
+      });
+
       test('initial value with different types', () async {
         // Test with various types
         final stringContainer = AsyncStateContainer<String>(
@@ -345,6 +380,176 @@ void main() async {
           AsyncState.data('initial'),
         ); // Still initial during computation
         expect(states[2], AsyncState.data('final')); // Final result
+      });
+    });
+
+    group("lazy vs eager execution", () {
+      test(
+        'lazy=true (default) - computation starts when future is accessed',
+        () async {
+          bool computationStarted = false;
+          final container = AsyncStateContainer<String>(
+            (state) async {
+              computationStarted = true;
+              await Future.delayed(Duration(milliseconds: 10));
+              return 'result';
+            },
+            lazy: true, // explicit, but this is the default
+          );
+
+          // Should not start computation immediately
+          await Future.delayed(Duration(milliseconds: 5));
+          expect(computationStarted, false);
+          expect(container.state, AsyncState.loading());
+
+          // Should start when future is accessed
+          final result = await container.future;
+          expect(computationStarted, true);
+          expect(result, 'result');
+        },
+      );
+
+      test('lazy=false (eager) - computation starts immediately', () async {
+        bool computationStarted = false;
+        final container = AsyncStateContainer<String>((state) async {
+          computationStarted = true;
+          await Future.delayed(Duration(milliseconds: 20));
+          return 'eager_result';
+        }, lazy: false);
+
+        // Should start computation immediately
+        await Future.delayed(Duration(milliseconds: 10));
+        expect(computationStarted, true);
+
+        // Future should resolve to the result
+        final result = await container.future;
+        expect(result, 'eager_result');
+      });
+
+      test('lazy=true with initial value', () async {
+        bool computationStarted = false;
+        final container = AsyncStateContainer<int>(
+          (state) async {
+            computationStarted = true;
+            return 100;
+          },
+          initialValue: 42,
+          lazy: true,
+        );
+
+        // Should have initial value but not start computation
+        expect(container.state, AsyncState.data(42));
+        await Future.delayed(Duration(milliseconds: 5));
+        expect(computationStarted, false);
+
+        // Should start when future is accessed
+        final result = await container.future;
+        expect(computationStarted, true);
+        expect(result, 100);
+      });
+
+      test('lazy=false with initial value', () async {
+        bool computationStarted = false;
+        final container = AsyncStateContainer<int>(
+          (state) async {
+            computationStarted = true;
+            await Future.delayed(Duration(milliseconds: 10));
+            return 200;
+          },
+          initialValue: 50,
+          lazy: false,
+        );
+
+        // Should have initial value and start computation immediately
+        expect(container.state, AsyncState.data(50));
+        await Future.delayed(Duration(milliseconds: 5));
+        expect(computationStarted, true);
+
+        // Future should resolve to computed result
+        final result = await container.future;
+        expect(result, 200);
+        expect(container.state, AsyncState.data(200));
+      });
+
+      test('run() method works the same for both lazy and eager', () async {
+        final lazyContainer = AsyncStateContainer<String>(
+          (state) async => 'lazy_result',
+          lazy: true,
+        );
+
+        final eagerContainer = AsyncStateContainer<String>(
+          (state) async => 'eager_result',
+          lazy: false,
+        );
+
+        // Both should work when run() is called explicitly
+        lazyContainer.run();
+        eagerContainer.run();
+
+        await Future.delayed(Duration(milliseconds: 10));
+
+        expect(lazyContainer.state, AsyncState.data('lazy_result'));
+        expect(eagerContainer.state, AsyncState.data('eager_result'));
+      });
+
+      test('multiple run() calls are safe for both lazy and eager', () async {
+        int executionCount = 0;
+        final container = AsyncStateContainer<int>(
+          (state) async {
+            executionCount++;
+            return executionCount;
+          },
+          lazy: false, // Eager execution
+        );
+
+        // Wait for initial execution
+        await Future.delayed(Duration(milliseconds: 10));
+        expect(executionCount, 1);
+
+        // Additional run() calls should not execute again
+        container.run();
+        container.run();
+        await Future.delayed(Duration(milliseconds: 10));
+        expect(executionCount, 1);
+      });
+
+      test('lazy container with error', () async {
+        final container = AsyncStateContainer<String>((state) async {
+          await Future.delayed(Duration(milliseconds: 10));
+          throw Exception('Lazy error');
+        }, lazy: true);
+
+        // Should not throw immediately
+        expect(container.state, AsyncState.loading());
+
+        // Should throw when future is accessed
+        try {
+          await container.future;
+          fail('Expected exception');
+        } catch (e) {
+          expect(e, isA<Exception>());
+        }
+
+        expect(container.state.hasError, true);
+      });
+
+      test('eager container with error', () async {
+        final container = AsyncStateContainer<String>((state) async {
+          await Future.delayed(Duration(milliseconds: 10));
+          throw Exception('Eager error');
+        }, lazy: false);
+
+        // Should start computation immediately, but error state will be set after delay
+        await Future.delayed(Duration(milliseconds: 20));
+        expect(container.state.hasError, true);
+
+        // Future should also throw
+        try {
+          await container.future;
+          fail('Expected exception');
+        } catch (e) {
+          expect(e, isA<Exception>());
+        }
       });
     });
 

@@ -38,6 +38,31 @@ abstract class ComputedFuture<Output>
       debugLabel: debugLabel,
     );
   }
+  factory ComputedFuture.nonReactive(
+    ComputedFutureBuilder<Output> futureBuilder, {
+    Output? initialValue,
+    bool lazy = true,
+    bool autoDispose = false,
+    String? debugLabel,
+  }) {
+    AsyncStateContainer<Output> containerBuilder() =>
+        AsyncStateContainer<Output>(
+          futureBuilder,
+          initialValue: initialValue,
+          lazy: lazy,
+        );
+    final containerSignal = Signal<AsyncStateContainer<Output>>(
+      containerBuilder(),
+    );
+
+    return _ComputedFutureImpl(
+      [],
+      containerBuilder,
+      containerSignal,
+      autoDispose: autoDispose,
+      debugLabel: debugLabel,
+    );
+  }
 }
 
 class _ComputedFutureImpl<Output> extends Computed<AsyncState<Output>>
@@ -48,7 +73,7 @@ class _ComputedFutureImpl<Output> extends Computed<AsyncState<Output>>
     this.containerSignal, {
     required super.autoDispose,
     required super.debugLabel,
-  }) : super(() => containerSignal.value.state);
+  }) : super(() => containerSignal.value.value);
 
   final AsyncStateContainer<Output> Function() containerBuilder;
   final Signal<AsyncStateContainer<Output>> containerSignal;
@@ -96,9 +121,10 @@ class _ComputedFutureImpl<Output> extends Computed<AsyncState<Output>>
       for (var dependency in dependencies) {
         dependency.value;
       }
-
       final nextContainer = containerBuilder()..run();
-      containerSignal.value.cancel(nextContainer);
+      untracked(() {
+        containerSignal.value.cancel(nextContainer);
+      });
 
       containerSignal.value = nextContainer;
     });

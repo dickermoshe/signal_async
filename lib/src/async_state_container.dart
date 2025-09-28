@@ -7,12 +7,13 @@ class CanceledFutureException implements Exception {
   CanceledFutureException();
 }
 
-class AsyncStateContainer<T> {
+class AsyncStateContainer<T> extends Signal<AsyncState<T>> {
   bool _isCanceled = false;
   bool get isCanceled => _isCanceled;
 
-  late AsyncState<T> _state;
-  AsyncState<T> get state => _nextState?.state ?? _state;
+  @override
+  AsyncState<T> get value => _nextState?.value ?? super.value;
+
   Completer<T>? _completer;
 
   Future<T>? _future;
@@ -88,16 +89,12 @@ class AsyncStateContainer<T> {
   /// The constructor for the AsyncStateContainer
   /// The initial value is used to set the initial state of the container
   /// If no initial value is provided, the container will start in a loading state
-  AsyncStateContainer(
-    this._futureBuilder, {
-    T? initialValue,
-    bool lazy = true,
-  }) {
-    if (initialValue != null) {
-      _state = AsyncState.data(initialValue);
-    } else {
-      _state = AsyncState.loading();
-    }
+  AsyncStateContainer(this._futureBuilder, {T? initialValue, bool lazy = true})
+    : super(
+        initialValue != null
+            ? AsyncState.data(initialValue)
+            : AsyncState.loading(),
+      ) {
     if (!lazy) {
       run();
     }
@@ -118,10 +115,10 @@ class AsyncStateContainer<T> {
     await Future.delayed(Duration.zero);
     try {
       final result = await _futureBuilder(this);
-      _state = AsyncState.data(result);
+      value = AsyncState.data(result);
       _completer!.complete(result);
     } catch (e) {
-      _state = AsyncState.error(e);
+      value = AsyncState.error(e);
       // If this future was canceled, the completer will already be completed
       // so we don't need to complete it again
       if (!_completer!.isCompleted) {

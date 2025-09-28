@@ -5,16 +5,16 @@ import 'package:signals/signals.dart';
 import 'package:test/test.dart';
 
 // A test which won't fail if it throws an error in the background.
-void mytest(String name, FutureOr<void> Function() testFn) {
-  test(name, () async {
-    await runZonedGuarded(testFn, (error, stack) {});
-  });
-}
+// void test(String name, FutureOr<void> Function() testFn) {
+//   test(name, () async {
+//     await runZonedGuarded(testFn, (error, stack) {});
+//   });
+// }
 
 void main() async {
   group("ComputedFuture.nonReactive() constructor", () {
     group("basic functionality", () {
-      mytest('creates and executes future computation', () async {
+      test('creates and executes future computation', () async {
         final computed = ComputedFuture.nonReactive((state) async {
           await Future.delayed(Duration(milliseconds: 10));
           return 42;
@@ -30,10 +30,10 @@ void main() async {
         expect(events, [AsyncState.loading(), AsyncState.data(42)]);
       });
 
-      mytest('computation receives FutureState parameter', () async {
-        FutureState? receivedState;
+      test('computation receives FutureState parameter', () async {
+        AsyncStateContainer<String?>? receivedState;
         final computed = ComputedFuture.nonReactive((state) async {
-          receivedState = state;
+          receivedState = state as AsyncStateContainer<String?>;
           return 'test';
         });
 
@@ -46,7 +46,7 @@ void main() async {
         expect(receivedState!.isCanceled, false);
       });
 
-      mytest('supports debugLabel parameter', () async {
+      test('supports debugLabel parameter', () async {
         final computed = ComputedFuture.nonReactive((state) async {
           return 'labeled';
         }, debugLabel: 'test-label');
@@ -56,31 +56,28 @@ void main() async {
     });
 
     group("lazy behavior", () {
-      mytest(
-        'lazy=true (default) - computation starts when accessed',
-        () async {
-          bool computationStarted = false;
-          final computed = ComputedFuture.nonReactive((state) async {
-            computationStarted = true;
-            await Future.delayed(Duration(milliseconds: 10));
-            return 'result';
-          });
+      test('lazy=true (default) - computation starts when accessed', () async {
+        bool computationStarted = false;
+        final computed = ComputedFuture.nonReactive((state) async {
+          computationStarted = true;
+          await Future.delayed(Duration(milliseconds: 10));
+          return 'result';
+        });
 
-          // Should not start computation immediately
-          await Future.delayed(Duration(milliseconds: 20));
-          expect(computationStarted, false);
+        // Should not start computation immediately
+        await Future.delayed(Duration(milliseconds: 20));
+        expect(computationStarted, false);
 
-          // Should start when accessed
-          effect(() {
-            computed.value;
-          });
+        // Should start when accessed
+        effect(() {
+          computed.value;
+        });
 
-          await Future.delayed(Duration(milliseconds: 20));
-          expect(computationStarted, true);
-        },
-      );
+        await Future.delayed(Duration(milliseconds: 20));
+        expect(computationStarted, true);
+      });
 
-      mytest('lazy=false - computation starts immediately', () async {
+      test('lazy=false - computation starts immediately', () async {
         bool computationStarted = false;
         final computed = ComputedFuture.nonReactive((state) async {
           computationStarted = true;
@@ -96,7 +93,7 @@ void main() async {
     });
 
     group("autoDispose behavior", () {
-      mytest(
+      test(
         'autoDispose=true cancels computation when effect disposed',
         () async {
           final events = [];
@@ -129,7 +126,7 @@ void main() async {
         },
       );
 
-      mytest(
+      test(
         'autoDispose=false allows computation to complete after effect disposed',
         () async {
           final events = [];
@@ -161,7 +158,7 @@ void main() async {
     });
 
     group("error handling", () {
-      mytest('handles synchronous errors', () async {
+      test('handles synchronous errors', () async {
         final computed = ComputedFuture.nonReactive((state) async {
           throw Exception('Sync error');
         });
@@ -178,7 +175,7 @@ void main() async {
         expect(events[1].error, isA<Exception>());
       });
 
-      mytest('handles asynchronous errors', () async {
+      test('handles asynchronous errors', () async {
         final computed = ComputedFuture.nonReactive((state) async {
           await Future.delayed(Duration(milliseconds: 10));
           throw Exception('Async error');
@@ -198,7 +195,7 @@ void main() async {
     });
 
     group("cancellation behavior", () {
-      mytest(
+      test(
         'state.isCanceled becomes true when computation is canceled',
         () async {
           bool wasCanceled = false;
@@ -220,7 +217,7 @@ void main() async {
         },
       );
 
-      mytest('onCancel callback is executed when canceled', () async {
+      test('onCancel callback is executed when canceled', () async {
         final cancelEvents = [];
         final computed = ComputedFuture.nonReactive((state) async {
           state.onCancel(() {
@@ -242,7 +239,7 @@ void main() async {
         expect(cancelEvents, ['cleanup executed']);
       });
 
-      mytest('multiple onCancel callbacks are executed in order', () async {
+      test('multiple onCancel callbacks are executed in order', () async {
         final cancelEvents = [];
         final computed = ComputedFuture.nonReactive((state) async {
           state.onCancel(() => cancelEvents.add('first'));
@@ -266,7 +263,7 @@ void main() async {
     });
 
     group("future property", () {
-      mytest('future property returns computation result', () async {
+      test('future property returns computation result', () async {
         final computed = ComputedFuture.nonReactive((state) async {
           await Future.delayed(Duration(milliseconds: 10));
           return 'future result';
@@ -280,7 +277,7 @@ void main() async {
         expect(result, 'future result');
       });
 
-      mytest('future property throws on error', () async {
+      test('future property throws on error', () async {
         final computed = ComputedFuture.nonReactive((state) async {
           await Future.delayed(Duration(milliseconds: 10));
           throw Exception('Future error');
@@ -300,7 +297,7 @@ void main() async {
         }
       });
 
-      mytest('future property handles cancellation', () async {
+      test('future property handles cancellation', () async {
         final computed = ComputedFuture.nonReactive((state) async {
           await Future.delayed(Duration(milliseconds: 30));
           if (state.isCanceled) {
@@ -324,7 +321,7 @@ void main() async {
     });
 
     group("reactive behavior", () {
-      mytest('computation does not re-execute on its own', () async {
+      test('computation does not re-execute on its own', () async {
         int executionCount = 0;
         final computed = ComputedFuture.nonReactive((state) async {
           executionCount++;
@@ -346,7 +343,7 @@ void main() async {
         expect(computed.value.value, 1);
       });
 
-      mytest(
+      test(
         'accessing value multiple times does not restart computation',
         () async {
           int executionCount = 0;
@@ -373,8 +370,8 @@ void main() async {
     });
 
     group("edge cases", () {
-      mytest('computation returning null', () async {
-        final computed = ComputedFuture.nonReactive<String?>((state) async {
+      test('computation returning null', () async {
+        final computed = ComputedFuture<String?>.nonReactive((state) async {
           await Future.delayed(Duration(milliseconds: 10));
           return null;
         });
@@ -387,7 +384,7 @@ void main() async {
         expect(computed.value.value, null);
       });
 
-      mytest('computation with immediate return', () async {
+      test('computation with immediate return', () async {
         final computed = ComputedFuture.nonReactive((state) async {
           return 'immediate';
         });
@@ -400,7 +397,7 @@ void main() async {
         expect(computed.value.value, 'immediate');
       });
 
-      mytest('dispose prevents computation start in lazy mode', () async {
+      test('dispose prevents computation start in lazy mode', () async {
         bool computationStarted = false;
         final computed = ComputedFuture.nonReactive((state) async {
           computationStarted = true;
@@ -421,10 +418,10 @@ void main() async {
   });
 
   group("lazy", () {
-    mytest('no defaults', () async {
+    test('no defaults', () async {
       final number = signal(2);
-      final squared = ComputedFuture(number, (state, input) async {
-        return input * input;
+      final squared = ComputedFuture([number], (state) async {
+        return number.value * number.value;
       });
       expect(squared.peek(), AsyncState.loading());
       final events = [];
@@ -437,22 +434,22 @@ void main() async {
     });
   });
   group("eager", () {
-    mytest('no defaults', () async {
+    test('no defaults', () async {
       final number = signal(2);
-      final squared = ComputedFuture(number, (state, input) async {
-        return input * input;
+      final squared = ComputedFuture([number], (state) async {
+        return number.value * number.value;
       }, lazy: false);
       await Future.delayed(Duration(milliseconds: 100));
       expect(squared.peek(), AsyncState.data(4));
     });
   });
   group("autoDispose", () {
-    mytest('true', () async {
+    test('true', () async {
       final number = signal(2);
       final events = [];
-      final squared = ComputedFuture(number, (state, input) async {
+      final squared = ComputedFuture([number], (state) async {
         await Future.delayed(Duration(milliseconds: 20));
-        final result = input * input;
+        final result = number.value * number.value;
         if (state.isCanceled) {
           throw Exception();
         }
@@ -472,12 +469,12 @@ void main() async {
 
       expect(await future, -1);
     });
-    mytest('false', () async {
+    test('false', () async {
       final number = signal(2);
       final events = [];
-      final squared = ComputedFuture(number, (state, input) async {
+      final squared = ComputedFuture([number], (state) async {
         await Future.delayed(Duration(milliseconds: 20));
-        final result = input * input;
+        final result = number.value * number.value;
         if (state.isCanceled) {
           throw Exception();
         }
@@ -502,13 +499,13 @@ void main() async {
   });
 
   group("error handling", () {
-    mytest('lazy with error', () async {
+    test('lazy with error', () async {
       final number = signal(2);
-      final squared = ComputedFuture(number, (state, input) async {
-        if (input == 4) {
+      final squared = ComputedFuture([number], (state) async {
+        if (number.value == 4) {
           throw Exception('Test error');
         }
-        return input * input;
+        return number.value * number.value;
       });
 
       expect(squared.peek(), AsyncState.loading());
@@ -532,13 +529,13 @@ void main() async {
       expect(events[3].error, isA<Exception>());
     });
 
-    mytest('eager with error', () async {
+    test('eager with error', () async {
       final number = signal(4);
-      final squared = ComputedFuture(number, (state, input) async {
-        if (input == 4) {
+      final squared = ComputedFuture([number], (state) async {
+        if (number.value == 4) {
           throw Exception('Test error');
         }
-        return input * input;
+        return number.value * number.value;
       }, lazy: false);
 
       await Future.delayed(Duration(milliseconds: 100));
@@ -546,13 +543,13 @@ void main() async {
       expect(squared.peek().error, isA<Exception>());
     });
 
-    mytest('error recovery', () async {
+    test('error recovery', () async {
       final number = signal(4);
-      final squared = ComputedFuture(number, (state, input) async {
-        if (input == 4) {
+      final squared = ComputedFuture([number], (state) async {
+        if (number.value == 4) {
           throw Exception('Test error');
         }
-        return input * input;
+        return number.value * number.value;
       });
 
       final events = <AsyncState>[];
@@ -571,21 +568,21 @@ void main() async {
   });
 
   group("cancellation behavior", () {
-    mytest('signal change cancels previous computation', () async {
+    test('signal change cancels previous computation', () async {
       final number = signal(1);
       final events = <String>[];
 
-      final computed = ComputedFuture(number, (state, input) async {
-        events.add('start_$input');
+      final computed = ComputedFuture([number], (state) async {
+        events.add('start_${number.value}');
         await Future.delayed(Duration(milliseconds: 50));
 
         if (state.isCanceled) {
-          events.add('canceled_$input');
+          events.add('canceled_${number.value}');
           return -1;
         }
 
-        events.add('complete_$input');
-        return input * 2;
+        events.add('complete_${number.value}');
+        return number.value * 2;
       });
 
       effect(() {
@@ -602,17 +599,17 @@ void main() async {
       expect(events, contains('complete_2'));
     });
 
-    mytest('onCancel callback is triggered on signal change', () async {
+    test('onCancel callback is triggered on signal change', () async {
       final number = signal(1);
       final cancelEvents = <String>[];
 
-      final computed = ComputedFuture(number, (state, input) async {
+      final computed = ComputedFuture([number], (state) async {
         state.onCancel(() {
-          cancelEvents.add('cleanup_$input');
+          cancelEvents.add('cleanup_${number.value}');
         });
 
         await Future.delayed(Duration(milliseconds: 30));
-        return input * 2;
+        return number.value * 2;
       });
 
       effect(() {
@@ -628,11 +625,11 @@ void main() async {
   });
 
   group("future access", () {
-    mytest('future property returns correct value', () async {
+    test('future property returns correct value', () async {
       final number = signal(3);
-      final computed = ComputedFuture(number, (state, input) async {
+      final computed = ComputedFuture([number], (state) async {
         await Future.delayed(Duration(milliseconds: 20));
-        return input * 3;
+        return number.value * 3;
       });
 
       effect(() {
@@ -643,9 +640,9 @@ void main() async {
       expect(result, 9);
     });
 
-    mytest('future property handles errors', () async {
+    test('future property handles errors', () async {
       final number = signal(5);
-      final computed = ComputedFuture(number, (state, input) async {
+      final computed = ComputedFuture([number], (state) async {
         await Future.delayed(Duration(milliseconds: 20));
         throw Exception('Future error');
       });
@@ -666,14 +663,14 @@ void main() async {
   });
 
   group("signal updates", () {
-    mytest('signal change triggers recomputation', () async {
+    test('signal change triggers recomputation', () async {
       final number = signal(1);
       int computationCount = 0;
 
-      final computed = ComputedFuture(number, (state, input) async {
+      final computed = ComputedFuture([number], (state) async {
         computationCount++;
         await Future.delayed(Duration(milliseconds: 10));
-        return input * 2;
+        return number.value * 2;
       });
 
       effect(() {
@@ -690,21 +687,21 @@ void main() async {
       expect(computed.value.value, 6);
     });
 
-    mytest('rapid signal changes cancel previous computations', () async {
+    test('rapid signal changes cancel previous computations', () async {
       final number = signal(1);
       final events = <String>[];
 
-      final computed = ComputedFuture(number, (state, input) async {
-        events.add('start_$input');
+      final computed = ComputedFuture([number], (state) async {
+        events.add('start_${number.value}');
         await Future.delayed(Duration(milliseconds: 30));
 
         if (state.isCanceled) {
-          events.add('canceled_$input');
+          events.add('canceled_${number.value}');
           return -1;
         }
 
-        events.add('complete_$input');
-        return input * 2;
+        events.add('complete_${number.value}');
+        return number.value * 2;
       });
 
       effect(() {
@@ -729,12 +726,12 @@ void main() async {
   });
 
   group("edge cases", () {
-    mytest('null input handling', () async {
+    test('null input handling', () async {
       final nullableSignal = signal<String?>(null);
 
-      final computed = ComputedFuture(nullableSignal, (state, input) async {
+      final computed = ComputedFuture([nullableSignal], (state) async {
         await Future.delayed(Duration(milliseconds: 10));
-        return input?.length ?? 0;
+        return nullableSignal.value?.length ?? 0;
       });
 
       effect(() {
@@ -742,21 +739,21 @@ void main() async {
       });
 
       await Future.delayed(Duration(milliseconds: 50));
-      expect(computed.value.value, 0);
+      expect(computed.value.requireValue, 0);
 
       nullableSignal.value = 'hello';
       await Future.delayed(Duration(milliseconds: 50));
       expect(computed.value.value, 5);
     });
 
-    mytest('dispose prevents new computations', () async {
+    test('dispose prevents new computations', () async {
       final number = signal(1);
       int computationCount = 0;
 
-      final computed = ComputedFuture(number, (state, input) async {
+      final computed = ComputedFuture([number], (state) async {
         computationCount++;
         await Future.delayed(Duration(milliseconds: 10));
-        return input * 2;
+        return number.value * 2;
       });
 
       effect(() {
@@ -783,18 +780,18 @@ void main() async {
       final number = signal(1);
       final events = <String>[]; // Track computation phases for debugging
 
-      final computed = ComputedFuture(number, (state, input) async {
-        events.add('start_$input');
+      final computed = ComputedFuture([number], (state) async {
+        events.add('start_${number.value}');
         await Future.delayed(Duration(milliseconds: 20)); // Simulate async work
 
         if (state.isCanceled) {
-          events.add('canceled_$input');
+          events.add('canceled_${number.value}');
           // Don't complete with -1; let chaining handle it
           throw Exception('Should not resolve canceled'); // But impl skips this
         }
 
-        events.add('complete_$input');
-        return input * 10; // Multiply for easy verification
+        events.add('complete_${number.value}');
+        return number.value * 10; // Multiply for easy verification
       });
 
       effect(() {
@@ -833,16 +830,16 @@ void main() async {
       expect(events, isNot(contains('complete_1')));
       expect(events, isNot(contains('complete_2')));
     });
-    mytest('chain with unhandled upstream error', () async {
+    test('chain with unhandled upstream error', () async {
       final number = signal(5); // Triggers upstream error
 
-      final processed = ComputedFuture(number, (state, input) async {
+      final processed = ComputedFuture([number], (state) async {
         await Future.delayed(Duration(milliseconds: 10));
-        if (input == 5) throw Exception('Upstream error');
-        return input * 2;
+        if (number.value == 5) throw Exception('Upstream error');
+        return number.value * 2;
       });
 
-      final result = ComputedFuture(processed, (state, _) async {
+      final result = ComputedFuture([processed], (state) async {
         await Future.delayed(Duration(milliseconds: 10));
         // Assume success - this should throw on requireValue
         final processedValue = await processed.future;
@@ -862,19 +859,19 @@ void main() async {
       await Future.delayed(Duration(milliseconds: 100));
       expect(result.value.value, 16); // (3*2) + 10
     });
-    mytest('simple chain: number -> doubled -> squared', () async {
+    test('simple chain: number -> doubled -> squared', () async {
       final number = signal(3);
 
       // First computation: double the number
-      final doubled = ComputedFuture(number, (state, input) async {
+      final doubled = ComputedFuture([number], (state) async {
         await Future.delayed(Duration(milliseconds: 10));
-        return input * 2;
+        return number.value * 2;
       });
 
       // Second computation: square the doubled result
-      final squared = ComputedFuture(doubled, (state, doubledState) async {
+      final squared = ComputedFuture([doubled], (state) async {
         await Future.delayed(Duration(milliseconds: 10));
-        final doubledValue = doubledState.requireValue;
+        final doubledValue = doubled.value.value!;
         return doubledValue * doubledValue;
       });
 
@@ -885,22 +882,22 @@ void main() async {
       await Future.delayed(Duration(milliseconds: 100));
       expect(squared.value.value, 36); // (3 * 2) ^ 2 = 36
     });
-    mytest(
+    test(
       'simple chain: number -> doubled -> squared with rapid changes',
       () async {
         final number = signal(3);
         final values = <int?>[];
 
         // First computation: double the number
-        final doubled = ComputedFuture(number, (state, input) async {
+        final doubled = ComputedFuture([number], (state) async {
           await Future.delayed(Duration(milliseconds: 100));
-          return input * 2;
+          return number.value * 2;
         });
 
         // Second computation: square the doubled result
-        final squared = ComputedFuture(doubled, (state, doubledState) async {
+        final squared = ComputedFuture([doubled], (state) async {
           await Future.delayed(Duration(milliseconds: 100));
-          final doubledValue = doubledState.requireValue;
+          final doubledValue = doubled.value.value!;
           return doubledValue * doubledValue;
         });
 
@@ -917,25 +914,25 @@ void main() async {
       },
     );
 
-    mytest('chain with error propagation', () async {
+    test('chain with error propagation', () async {
       final number = signal(5);
 
       // First computation: throw error for certain values
-      final processed = ComputedFuture(number, (state, input) async {
+      final processed = ComputedFuture([number], (state) async {
         await Future.delayed(Duration(milliseconds: 10));
-        if (input == 5) {
+        if (number.value == 5) {
           throw Exception('Processing error');
         }
-        return input * 2;
+        return number.value * 2;
       });
 
       // Second computation: depends on first
-      final result = ComputedFuture(processed, (state, processedState) async {
+      final result = ComputedFuture([processed], (state) async {
         await Future.delayed(Duration(milliseconds: 10));
-        if (processedState.hasError) {
-          throw Exception('Chain error: ${processedState.error}');
+        if (processed.value.hasError) {
+          throw Exception('Chain error: ${processed.value.error}');
         }
-        final processedValue = processedState.requireValue;
+        final processedValue = processed.value.value!;
         return processedValue + 10;
       });
 
@@ -948,27 +945,27 @@ void main() async {
       expect(result.value.error.toString(), contains('Chain error'));
     });
 
-    mytest('chain with cancellation', () async {
+    test('chain with cancellation', () async {
       final number = signal(2);
       final events = <String>[];
 
       // First computation
-      final doubled = ComputedFuture(number, (state, input) async {
-        events.add('doubled_start_$input');
+      final doubled = ComputedFuture([number], (state) async {
+        events.add('doubled_start_${number.value}');
         await Future.delayed(Duration(milliseconds: 30));
 
         if (state.isCanceled) {
-          events.add('doubled_canceled_$input');
+          events.add('doubled_canceled_${number.value}');
           return -1;
         }
 
-        events.add('doubled_complete_$input');
-        return input * 2;
+        events.add('doubled_complete_${number.value}');
+        return number.value * 2;
       });
 
       // Second computation
-      final squared = ComputedFuture(doubled, (state, doubledState) async {
-        final doubledValue = doubledState.requireValue;
+      final squared = ComputedFuture([doubled], (state) async {
+        final doubledValue = doubled.value.value!;
         events.add('squared_start_$doubledValue');
         await Future.delayed(Duration(milliseconds: 30));
 
@@ -997,24 +994,24 @@ void main() async {
       expect(events, contains('squared_complete_6'));
     });
 
-    mytest('multiple dependent computations', () async {
+    test('multiple dependent computations', () async {
       final number = signal(2);
 
       // Chain: number -> doubled -> tripled -> final
-      final doubled = ComputedFuture(number, (state, input) async {
+      final doubled = ComputedFuture([number], (state) async {
         await Future.delayed(Duration(milliseconds: 5));
-        return input * 2;
+        return number.value * 2;
       });
 
-      final tripled = ComputedFuture(doubled, (state, doubledState) async {
+      final tripled = ComputedFuture([doubled], (state) async {
         await Future.delayed(Duration(milliseconds: 5));
-        final doubledValue = doubledState.requireValue;
+        final doubledValue = doubled.value.value!;
         return doubledValue * 3;
       });
 
-      final finalResult = ComputedFuture(tripled, (state, tripledState) async {
+      final finalResult = ComputedFuture([tripled], (state) async {
         await Future.delayed(Duration(milliseconds: 5));
-        final tripledValue = tripledState.requireValue;
+        final tripledValue = tripled.value.value!;
         return tripledValue + 10;
       });
 
@@ -1026,26 +1023,26 @@ void main() async {
       expect(finalResult.value.value, 22); // (2 * 2 * 3) + 10 = 22
     });
 
-    mytest('chain with different input types', () async {
+    test('chain with different input types', () async {
       final textSignal = signal('hello');
 
       // First: get length
-      final length = ComputedFuture(textSignal, (state, text) async {
+      final length = ComputedFuture([textSignal], (state) async {
         await Future.delayed(Duration(milliseconds: 10));
-        return text.length;
+        return textSignal.value.length;
       });
 
       // Second: create list of that length
-      final list = ComputedFuture(length, (state, lengthState) async {
+      final list = ComputedFuture([length], (state) async {
         await Future.delayed(Duration(milliseconds: 10));
-        final lengthValue = lengthState.requireValue;
+        final lengthValue = length.value.value!;
         return List.generate(lengthValue, (i) => i);
       });
 
       // Third: sum the list
-      final sum = ComputedFuture(list, (state, listState) async {
+      final sum = ComputedFuture([list], (state) async {
         await Future.delayed(Duration(milliseconds: 10));
-        final listValue = listState.requireValue;
+        final listValue = list.value.value!;
         return listValue.reduce((a, b) => a + b);
       });
 
@@ -1061,22 +1058,22 @@ void main() async {
       expect(sum.value.value, 1); // [0,1] sum = 1
     });
 
-    mytest('chain with async error recovery', () async {
+    test('chain with async error recovery', () async {
       final number = signal(4);
 
       // First computation: throws error for 4
-      final processed = ComputedFuture(number, (state, input) async {
+      final processed = ComputedFuture([number], (state) async {
         await Future.delayed(Duration(milliseconds: 10));
-        if (input == 4) {
+        if (number.value == 4) {
           throw Exception('Invalid input');
         }
-        return input * 2;
+        return number.value * 2;
       });
 
       // Second computation: handles the error gracefully
-      final result = ComputedFuture(processed, (state, processedState) async {
+      final result = ComputedFuture([processed], (state) async {
         await Future.delayed(Duration(milliseconds: 10));
-        final processedValue = processedState.requireValue;
+        final processedValue = processed.value.value!;
         return processedValue + 5;
       });
 
@@ -1093,23 +1090,27 @@ void main() async {
       expect(result.value.value, 11); // (3 * 2) + 5 = 11
     });
   });
-  mytest('multiple onCancel callbacks', () async {
+  test('multiple onCancel callbacks', () async {
     final number = signal(1);
     final cancelEvents = <String>[];
 
-    final computed = ComputedFuture(number, (state, input) async {
+    final computed = ComputedFuture([number], (state) async {
       state.onCancel(
-        () => cancelEvents.add('cleanup1_$input'),
+        () => cancelEvents.add('cleanup1_${number.value}'),
       ); // First registered
-      state.onCancel(() => cancelEvents.add('cleanup2_$input')); // Second
-      state.onCancel(() => cancelEvents.add('cleanup3_$input')); // Third
+      state.onCancel(
+        () => cancelEvents.add('cleanup2_${number.value}'),
+      ); // Second
+      state.onCancel(
+        () => cancelEvents.add('cleanup3_${number.value}'),
+      ); // Third
 
       await Future.delayed(Duration(milliseconds: 20));
       if (state.isCanceled) {
-        cancelEvents.add('canceled_inside_fn_$input');
+        cancelEvents.add('canceled_inside_fn_${number.value}');
         return -1;
       }
-      return input * 2;
+      return number.value * 2;
     });
 
     effect(() {
@@ -1126,23 +1127,23 @@ void main() async {
       isNot(contains('canceled_inside_fn_1')),
     ); // Didn't finish due to cancel
   });
-  mytest('error in onCancel has no effect', () async {
+  test('error in onCancel has no effect', () async {
     final number = signal(1);
     final cancelEvents = <String>[];
     bool chainContinued = false;
 
-    final computed = ComputedFuture(number, (state, input) async {
+    final computed = ComputedFuture([number], (state) async {
       state.onCancel(() {
-        cancelEvents.add('cleanup1_$input');
+        cancelEvents.add('cleanup1_${number.value}');
         throw Exception('Error in first callback'); // Throws here
       });
       state.onCancel(() {
-        cancelEvents.add('cleanup2_$input');
+        cancelEvents.add('cleanup2_${number.value}');
         chainContinued = true; // Check if chain survives throw
       });
 
       await Future.delayed(Duration(milliseconds: 20));
-      return input * 2;
+      return number.value * 2;
     });
 
     effect(() {
@@ -1157,7 +1158,7 @@ void main() async {
   });
 
   group("restart functionality", () {
-    mytest('restart() restarts non-reactive ComputedFuture', () async {
+    test('restart() restarts non-reactive ComputedFuture', () async {
       int executionCount = 0;
       String currentResult = '';
 
@@ -1185,16 +1186,16 @@ void main() async {
       expect(computed.value.value, 'execution_2');
     });
 
-    mytest(
+    test(
       'restart() restarts reactive ComputedFuture with same input',
       () async {
         final input = signal(5);
         int executionCount = 0;
 
-        final computed = ComputedFuture(input, (state, value) async {
+        final computed = ComputedFuture([input], (state) async {
           executionCount++;
           await Future.delayed(Duration(milliseconds: 10));
-          return 'result_${executionCount}_$value';
+          return 'result_${executionCount}_${input.value}';
         });
 
         // Start initial computation
@@ -1215,7 +1216,7 @@ void main() async {
       },
     );
 
-    mytest(
+    test(
       'restart() cancels ongoing computation before starting new one',
       () async {
         final events = <String>[];
@@ -1263,7 +1264,7 @@ void main() async {
       },
     );
 
-    mytest(
+    test(
       'restart() on lazy ComputedFuture that has not started has no effect',
       () async {
         int executionCount = 0;
@@ -1291,7 +1292,7 @@ void main() async {
       },
     );
 
-    mytest('restart() works with future property', () async {
+    test('restart() works with future property', () async {
       int executionCount = 0;
 
       final computed = ComputedFuture.nonReactive((state) async {
@@ -1317,7 +1318,7 @@ void main() async {
       expect(executionCount, 2);
     });
 
-    mytest('multiple restart() calls queue properly', () async {
+    test('multiple restart() calls queue properly', () async {
       int executionCount = 0;
       final events = <String>[];
 
@@ -1363,7 +1364,7 @@ void main() async {
       expect(events, isNot(contains('complete_3')));
     });
 
-    mytest('restart() with error handling', () async {
+    test('restart() with error handling', () async {
       int executionCount = 0;
 
       final computed = ComputedFuture.nonReactive((state) async {
