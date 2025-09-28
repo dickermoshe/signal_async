@@ -1433,7 +1433,6 @@ void main() async {
       await Future.delayed(Duration(milliseconds: 100));
 
       // Should update to computed value
-      print(events);
       expect(events.length, 2);
       expect(events[0], AsyncState.data(1)); // Initial value
       expect(events[1], AsyncState.data(36)); // Final computed value
