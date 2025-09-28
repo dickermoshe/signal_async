@@ -190,10 +190,10 @@ effect(() {
 // Stream provides data, Future processes it
 final dataStream = ComputedStream(() => someDataStream);
 final processedFuture = ComputedFuture(dataStream, (state, streamState) async {
-  if (!streamState.hasValue) return null;
+  final value = await dataStream.future;
   
   // Process the stream value
-  return await processData(streamState.value);
+  return await processData(value);
 });
 ```
 
