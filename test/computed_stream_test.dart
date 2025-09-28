@@ -4,17 +4,10 @@ import 'package:signals_async/signals_async.dart';
 import 'package:signals/signals.dart';
 import 'package:test/test.dart';
 
-// A test which won't fail if it throws an error in the background.
-void mytest(String name, FutureOr<void> Function() testFn) {
-  test(name, () async {
-    await runZonedGuarded(testFn, (error, stack) {});
-  });
-}
-
 void main() async {
   group("ComputedStream", () {
     group("basic functionality", () {
-      mytest('creates and subscribes to stream', () async {
+      test('creates and subscribes to stream', () async {
         final controller = StreamController<int>();
         final computed = ComputedStream(() => controller.stream);
 
@@ -40,7 +33,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('supports initialValue parameter', () async {
+      test('supports initialValue parameter', () async {
         final controller = StreamController<String>();
         final computed = ComputedStream(
           () => controller.stream,
@@ -62,7 +55,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('supports debugLabel parameter', () async {
+      test('supports debugLabel parameter', () async {
         final controller = StreamController<int>();
         final computed = ComputedStream(
           () => controller.stream,
@@ -76,7 +69,7 @@ void main() async {
     });
 
     group("lazy behavior", () {
-      mytest('lazy=true (default) - stream starts when accessed', () async {
+      test('lazy=true (default) - stream starts when accessed', () async {
         bool streamCreated = false;
         final controller = StreamController<int>();
 
@@ -101,7 +94,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('lazy=false - stream starts immediately', () async {
+      test('lazy=false - stream starts immediately', () async {
         bool streamCreated = false;
         final controller = StreamController<int>();
 
@@ -120,7 +113,7 @@ void main() async {
     });
 
     group("autoDispose behavior", () {
-      mytest(
+      test(
         'autoDispose=true cancels subscription when effect disposed',
         () async {
           final controller = StreamController<int>();
@@ -147,7 +140,7 @@ void main() async {
         },
       );
 
-      mytest(
+      test(
         'autoDispose=false keeps subscription after effect disposed',
         () async {
           final controller = StreamController<int>();
@@ -177,7 +170,7 @@ void main() async {
     });
 
     group("error handling", () {
-      mytest('handles stream errors', () async {
+      test('handles stream errors', () async {
         final controller = StreamController<int>();
         final computed = ComputedStream(() => controller.stream);
 
@@ -198,7 +191,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('recovers from errors with new data', () async {
+      test('recovers from errors with new data', () async {
         final controller = StreamController<int>();
         final computed = ComputedStream(() => controller.stream);
 
@@ -222,7 +215,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('handles multiple consecutive errors', () async {
+      test('handles multiple consecutive errors', () async {
         final controller = StreamController<int>();
         final computed = ComputedStream(() => controller.stream);
 
@@ -250,7 +243,7 @@ void main() async {
     });
 
     group("future property", () {
-      mytest('future property returns stream data', () async {
+      test('future property returns stream data', () async {
         final controller = StreamController<String>();
         final computed = ComputedStream(() => controller.stream);
 
@@ -269,7 +262,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('future property with initialValue returns immediately', () async {
+      test('future property with initialValue returns immediately', () async {
         final controller = StreamController<String>();
         final computed = ComputedStream(
           () => controller.stream,
@@ -282,7 +275,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('future property throws on stream error', () async {
+      test('future property throws on stream error', () async {
         final controller = StreamController<int>();
         final computed = ComputedStream(() => controller.stream);
 
@@ -332,7 +325,7 @@ void main() async {
     });
 
     group("stream lifecycle", () {
-      mytest('disposes subscription on dispose', () async {
+      test('disposes subscription on dispose', () async {
         final controller = StreamController<int>();
 
         final computed = ComputedStream(() => controller.stream);
@@ -365,7 +358,7 @@ void main() async {
         expect(await futureResult, 42);
       });
 
-      mytest(
+      test(
         'disposing stream with initial value does not cause future timeout',
         () async {
           final controller = StreamController<int>();
@@ -396,7 +389,7 @@ void main() async {
           controller.close();
         },
       );
-      mytest(
+      test(
         'disposing stream without any data does not cause future timeout and throws a StateError',
         () async {
           final controller = StreamController<int>();
@@ -419,7 +412,7 @@ void main() async {
         },
       );
 
-      mytest('handles stream closing gracefully', () async {
+      test('handles stream closing gracefully', () async {
         final controller = StreamController<int>();
         final computed = ComputedStream(() => controller.stream);
 
@@ -437,7 +430,7 @@ void main() async {
         expect(events, [AsyncState.loading(), AsyncState.data(42)]);
       });
 
-      mytest('multiple access to value does not restart stream', () async {
+      test('multiple access to value does not restart stream', () async {
         int streamCreateCount = 0;
         final controller = StreamController<int>();
 
@@ -464,7 +457,7 @@ void main() async {
     });
 
     group("data flow", () {
-      mytest('emits multiple values in sequence', () async {
+      test('emits multiple values in sequence', () async {
         final controller = StreamController<int>();
         final computed = ComputedStream(() => controller.stream);
 
@@ -491,7 +484,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('handles rapid stream emissions', () async {
+      test('handles rapid stream emissions', () async {
         final controller = StreamController<int>();
         final computed = ComputedStream(() => controller.stream);
 
@@ -516,7 +509,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('handles different data types', () async {
+      test('handles different data types', () async {
         final stringController = StreamController<String>();
         final stringComputed = ComputedStream(() => stringController.stream);
 
@@ -572,7 +565,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('handles empty stream that closes immediately', () async {
+      test('handles empty stream that closes immediately', () async {
         final controller = StreamController<int>();
         final computed = ComputedStream(() => controller.stream);
 
@@ -588,7 +581,7 @@ void main() async {
         expect(events, [AsyncState.loading()]);
       });
 
-      mytest('handles stream that emits then errors', () async {
+      test('handles stream that emits then errors', () async {
         final controller = StreamController<int>();
         final computed = ComputedStream(() => controller.stream);
 
@@ -611,7 +604,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('handles periodic stream', () async {
+      test('handles periodic stream', () async {
         int counter = 0;
         final computed = ComputedStream(() {
           return Stream.periodic(Duration(milliseconds: 20), (_) => ++counter);
@@ -637,7 +630,7 @@ void main() async {
     });
 
     group("performance and memory", () {
-      mytest('properly cleans up resources', () async {
+      test('properly cleans up resources', () async {
         final controllers = <StreamController<int>>[];
         final computedStreams = <ComputedStream<int>>[];
 
@@ -673,7 +666,7 @@ void main() async {
         }
       });
 
-      mytest('handles high-frequency stream updates', () async {
+      test('handles high-frequency stream updates', () async {
         final controller = StreamController<int>();
         final computed = ComputedStream(() => controller.stream);
 
@@ -698,7 +691,7 @@ void main() async {
     });
 
     group("integration scenarios", () {
-      mytest('works with broadcast streams', () async {
+      test('works with broadcast streams', () async {
         final controller = StreamController<int>.broadcast();
         final computed1 = ComputedStream(() => controller.stream);
         final computed2 = ComputedStream(() => controller.stream);
@@ -723,7 +716,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('works with transformed streams', () async {
+      test('works with transformed streams', () async {
         final controller = StreamController<int>();
         final computed = ComputedStream(() {
           return controller.stream
@@ -753,7 +746,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('works with async* generated streams', () async {
+      test('works with async* generated streams', () async {
         Stream<int> generateNumbers() async* {
           for (int i = 1; i <= 3; i++) {
             await Future.delayed(Duration(milliseconds: 10));
@@ -778,7 +771,7 @@ void main() async {
         ]);
       });
 
-      mytest('chained with other signals', () async {
+      test('chained with other signals', () async {
         final controller = StreamController<int>();
         final multiplier = signal(2);
 
@@ -809,7 +802,7 @@ void main() async {
     });
 
     group("restart functionality", () {
-      mytest('stream subscription is created only once per instance', () async {
+      test('stream subscription is created only once per instance', () async {
         int streamCreateCount = 0;
         final controller = StreamController<int>();
 

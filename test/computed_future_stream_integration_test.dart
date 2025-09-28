@@ -4,17 +4,10 @@ import 'package:signals_async/signals_async.dart';
 import 'package:signals/signals.dart';
 import 'package:test/test.dart';
 
-// A test which won't fail if it throws an error in the background.
-void mytest(String name, FutureOr<void> Function() testFn) {
-  test(name, () async {
-    await runZonedGuarded(testFn, (error, stack) {});
-  });
-}
-
 void main() async {
   group("ComputedFuture + ComputedStream Integration", () {
     group("basic integration", () {
-      mytest('ComputedFuture listening to ComputedStream values', () async {
+      test('ComputedFuture listening to ComputedStream values', () async {
         final controller = StreamController<int>();
         final streamSignal = ComputedStream(() => controller.stream);
 
@@ -62,7 +55,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('ComputedFuture awaiting ComputedStream future', () async {
+      test('ComputedFuture awaiting ComputedStream future', () async {
         final controller = StreamController<String>();
         final streamSignal = ComputedStream(() => controller.stream);
 
@@ -90,7 +83,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('ComputedFuture with initialValue from ComputedStream', () async {
+      test('ComputedFuture with initialValue from ComputedStream', () async {
         final controller = StreamController<int>();
         final streamSignal = ComputedStream(
           () => controller.stream,
@@ -123,7 +116,7 @@ void main() async {
     });
 
     group("error handling", () {
-      mytest('ComputedFuture handles ComputedStream errors', () async {
+      test('ComputedFuture handles ComputedStream errors', () async {
         final controller = StreamController<int>();
         final streamSignal = ComputedStream(() => controller.stream);
 
@@ -167,7 +160,7 @@ void main() async {
         controller.close();
       });
 
-      mytest('ComputedFuture propagates ComputedStream errors', () async {
+      test('ComputedFuture propagates ComputedStream errors', () async {
         final controller = StreamController<int>();
         final streamSignal = ComputedStream(() => controller.stream);
 
@@ -198,7 +191,7 @@ void main() async {
         controller.close();
       });
 
-      mytest(
+      test(
         'ComputedFuture error recovery after ComputedStream recovers',
         () async {
           final controller = StreamController<int>();
@@ -241,7 +234,7 @@ void main() async {
     });
 
     group("cancellation and disposal", () {
-      mytest(
+      test(
         'ComputedFuture cancellation does not affect ComputedStream',
         () async {
           final controller = StreamController<int>();
@@ -297,7 +290,7 @@ void main() async {
         },
       );
 
-      mytest(
+      test(
         'ComputedStream disposal affects dependent ComputedFuture',
         () async {
           final controller = StreamController<int>();
@@ -334,7 +327,7 @@ void main() async {
         },
       );
 
-      mytest('autoDispose behavior with stream dependencies', () async {
+      test('autoDispose behavior with stream dependencies', () async {
         final controller = StreamController<int>();
         final streamSignal = ComputedStream(() => controller.stream);
 
@@ -412,7 +405,7 @@ void main() async {
         controller.close();
       });
 
-      mytest(
+      test(
         'rapid ComputedStream changes cancel previous ComputedFuture computations',
         () async {
           final controller = StreamController<int>();
@@ -516,7 +509,7 @@ void main() async {
     });
 
     group("chaining scenarios", () {
-      mytest(
+      test(
         'ComputedStream -> ComputedFuture -> ComputedFuture chain',
         () async {
           final controller = StreamController<int>();
@@ -570,7 +563,7 @@ void main() async {
         },
       );
 
-      mytest(
+      test(
         'multiple ComputedFutures listening to same ComputedStream',
         () async {
           final controller = StreamController<int>();
@@ -632,7 +625,7 @@ void main() async {
         },
       );
 
-      mytest('ComputedFuture depending on multiple ComputedStreams', () async {
+      test('ComputedFuture depending on multiple ComputedStreams', () async {
         final controller1 = StreamController<int>();
         final controller2 = StreamController<String>();
 
@@ -686,7 +679,7 @@ void main() async {
     });
 
     group("performance and edge cases", () {
-      mytest(
+      test(
         'high-frequency ComputedStream updates with ComputedFuture',
         () async {
           final controller = StreamController<int>();
@@ -725,7 +718,7 @@ void main() async {
         },
       );
 
-      mytest(
+      test(
         'ComputedFuture with slow computation and fast ComputedStream',
         () async {
           final controller = StreamController<int>();
@@ -774,42 +767,39 @@ void main() async {
         },
       );
 
-      mytest(
-        'ComputedStream closes while ComputedFuture is computing',
-        () async {
-          final controller = StreamController<int>();
-          final streamSignal = ComputedStream(() => controller.stream);
+      test('ComputedStream closes while ComputedFuture is computing', () async {
+        final controller = StreamController<int>();
+        final streamSignal = ComputedStream(() => controller.stream);
 
-          final futureSignal = ComputedFuture(streamSignal, (
-            state,
-            streamState,
-          ) async {
-            await Future.delayed(Duration(milliseconds: 30));
-            return streamState.requireValue * 10;
-          });
+        final futureSignal = ComputedFuture(streamSignal, (
+          state,
+          streamState,
+        ) async {
+          await Future.delayed(Duration(milliseconds: 30));
+          return streamState.requireValue * 10;
+        });
 
-          final events = [];
-          effect(() {
-            events.add(futureSignal.value);
-          });
+        final events = [];
+        effect(() {
+          events.add(futureSignal.value);
+        });
 
-          controller.add(5);
-          await Future.delayed(Duration(milliseconds: 15));
+        controller.add(5);
+        await Future.delayed(Duration(milliseconds: 15));
 
-          // Close stream while future is computing
-          controller.close();
-          streamSignal.dispose();
+        // Close stream while future is computing
+        controller.close();
+        streamSignal.dispose();
 
-          await Future.delayed(Duration(milliseconds: 50));
+        await Future.delayed(Duration(milliseconds: 50));
 
-          expect(events.length, greaterThanOrEqualTo(1));
-          expect(events[0], AsyncState.loading());
+        expect(events.length, greaterThanOrEqualTo(1));
+        expect(events[0], AsyncState.loading());
 
-          futureSignal.dispose();
-        },
-      );
+        futureSignal.dispose();
+      });
 
-      mytest('memory cleanup with many stream-future pairs', () async {
+      test('memory cleanup with many stream-future pairs', () async {
         final controllers = <StreamController<int>>[];
         final streams = <ComputedStream<int>>[];
         final futures = <ComputedFuture<int, AsyncState<int>>>[];
@@ -869,7 +859,7 @@ void main() async {
     });
 
     group("future property integration", () {
-      mytest(
+      test(
         'await ComputedFuture.future that depends on ComputedStream',
         () async {
           final controller = StreamController<String>();
@@ -901,7 +891,7 @@ void main() async {
         },
       );
 
-      mytest('chained future awaits with stream dependency', () async {
+      test('chained future awaits with stream dependency', () async {
         final controller = StreamController<int>();
         final streamSignal = ComputedStream(() => controller.stream);
 
