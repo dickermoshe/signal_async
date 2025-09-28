@@ -1,3 +1,8 @@
+## 2.0.0
+
+- Add `restart` method to `ComputedFuture`
+- Add `ComputedStream` class
+
 ## 1.0.0
 
 - Initial release of signals_async
