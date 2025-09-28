@@ -1,3 +1,7 @@
+## 2.0.2
+
+- Skip loading state on chained initial values
+
 ## 2.0.1
 
 - Some documentation updates

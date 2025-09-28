@@ -49,6 +49,7 @@ dependencies:
   - [Error Handling Patterns](#error-handling-patterns)
     - [Try-Catch in ComputedFuture](#try-catch-in-computedfuture)
     - [Retry Logic](#retry-logic)
+  - [Simple Flutter Example](#simple-flutter-example)
   - [License](#license)
 
 
@@ -472,6 +473,106 @@ final retryableCall = ComputedFuture.nonReactive((state) async {
   
   throw Exception('All attempts failed');
 });
+```
+
+## Simple Flutter Example
+
+Here's a basic example showing how to use `ComputedFuture` in a Flutter widget:
+
+```dart
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:signals/signals.dart';
+import 'package:signals_async/signals_async.dart';
+
+class UserProfileWidget extends StatefulWidget {
+  @override
+  State<UserProfileWidget> createState() => _UserProfileWidgetState();
+}
+
+class _UserProfileWidgetState extends State<UserProfileWidget> {
+  late final Signal<int> userId;
+  late final ComputedFuture<Map<String, dynamic>, int> userProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    
+    // Create a reactive signal for user ID
+    userId = signal(1);
+    
+    // Create a ComputedFuture that fetches user data when userId changes
+    userProfile = ComputedFuture(userId, (state, id) async {
+      // Real API call (replace with your endpoint)
+      final response = await http.get(
+        Uri.parse('https://jsonplaceholder.typicode.com/users/$id'),
+      );
+      
+      // Check if the request was canceled
+      if (state.isCanceled) {
+        throw Exception('Request canceled');
+      }
+      
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // User ID selector
+        Row(
+          children: [
+            Text('User ID: '),
+            ...List.generate(3, (index) {
+              final id = index + 1;
+              return Padding(
+                padding: EdgeInsets.only(left: 8.0),
+                child: Watch((context) => ElevatedButton(
+                  onPressed: () => userId.value = id,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: userId.value == id ? Colors.blue : null,
+                  ),
+                  child: Text('$id'),
+                )),
+              );
+            }),
+          ],
+        ),
+        
+        SizedBox(height: 16),
+        
+        // User profile display
+        Watch((context) {
+          final state = userProfile.value;
+          
+          return switch (state) {
+            AsyncLoading() => CircularProgressIndicator(),
+            AsyncError(:final error) => Text('Error: $error'),
+            AsyncData(:final value) => Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      value['name'] ?? 'Unknown',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    Text('Email: ${value['email'] ?? 'N/A'}'),
+                    Text('Phone: ${value['phone'] ?? 'N/A'}'),
+                  ],
+                ),
+              ),
+            ),
+          };
+        }),
+      ],
+    );
+  }
+}
 ```
 
 ## License
