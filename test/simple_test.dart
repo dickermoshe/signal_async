@@ -425,6 +425,68 @@ void main() async {
 
       expect(events, [AsyncState.loading(), AsyncState.data(4)]);
     });
+
+    test('with initialValue - no loading state', () async {
+      final number = signal(2);
+      final squared = ComputedFuture(number, (state, input) async {
+        await Future.delayed(Duration(milliseconds: 50));
+        return input * input;
+      }, initialValue: 0);
+
+      // Should never show loading state with initialValue
+      expect(squared.peek(), AsyncState.data(0));
+
+      final events = [];
+      effect(() {
+        events.add(squared.value);
+      });
+
+      // Should start with initial value, not loading
+      expect(events, [AsyncState.data(0)]);
+
+      await Future.delayed(Duration(milliseconds: 100));
+
+      // Should update to computed value
+      expect(events, [AsyncState.data(0), AsyncState.data(4)]);
+    });
+
+    test('with initialValue - immediate computation', () async {
+      final number = signal(3);
+      final squared = ComputedFuture(number, (state, input) async {
+        return input * input; // Immediate return
+      }, initialValue: 1);
+
+      expect(squared.peek(), AsyncState.data(1));
+
+      final events = [];
+      effect(() {
+        events.add(squared.value);
+      });
+
+      await Future.delayed(Duration(milliseconds: 50));
+
+      // Should go from initial value directly to computed value
+      expect(events, [AsyncState.data(1), AsyncState.data(9)]);
+    });
+
+    test('with initialValue - different types', () async {
+      final text = signal('hello');
+      final processed = ComputedFuture(text, (state, input) async {
+        await Future.delayed(Duration(milliseconds: 20));
+        return input.toUpperCase();
+      }, initialValue: 'INITIAL');
+
+      expect(processed.peek(), AsyncState.data('INITIAL'));
+
+      final events = [];
+      effect(() {
+        events.add(processed.value);
+      });
+
+      await Future.delayed(Duration(milliseconds: 50));
+
+      expect(events, [AsyncState.data('INITIAL'), AsyncState.data('HELLO')]);
+    });
   });
   group("eager", () {
     test('no defaults', () async {
@@ -434,6 +496,86 @@ void main() async {
       }, lazy: false);
       await Future.delayed(Duration(milliseconds: 100));
       expect(squared.peek(), AsyncState.data(4));
+    });
+
+    test('with initialValue - eager execution', () async {
+      final number = signal(3);
+      final squared = ComputedFuture(
+        number,
+        (state, input) async {
+          await Future.delayed(Duration(milliseconds: 30));
+          return input * input;
+        },
+        initialValue: 5,
+        lazy: false,
+      );
+
+      // Should start with initial value immediately
+      expect(squared.peek(), AsyncState.data(5));
+
+      final events = [];
+      effect(() {
+        events.add(squared.value);
+      });
+
+      // Should start with initial value
+      expect(events, [AsyncState.data(5)]);
+
+      await Future.delayed(Duration(milliseconds: 50));
+
+      // Should update to computed value
+      expect(events, [AsyncState.data(5), AsyncState.data(9)]);
+    });
+
+    test('with initialValue - immediate eager computation', () async {
+      final number = signal(4);
+      final squared = ComputedFuture(
+        number,
+        (state, input) async {
+          return input * input; // Immediate return
+        },
+        initialValue: 2,
+        lazy: false,
+      );
+
+      // Should start with initial value
+      expect(squared.peek(), AsyncState.data(2));
+
+      final events = [];
+      effect(() {
+        events.add(squared.value);
+      });
+
+      await Future.delayed(Duration(milliseconds: 20));
+
+      // Should go from initial value directly to computed value
+      expect(events, [AsyncState.data(2), AsyncState.data(16)]);
+    });
+
+    test('with initialValue - complex object', () async {
+      final data = signal({'count': 2});
+      final processed = ComputedFuture(
+        data,
+        (state, input) async {
+          await Future.delayed(Duration(milliseconds: 25));
+          return {'doubled': input['count']! * 2};
+        },
+        initialValue: {'doubled': 0},
+        lazy: false,
+      );
+
+      expect(processed.peek().value, {'doubled': 0});
+
+      final events = [];
+      effect(() {
+        events.add(processed.value);
+      });
+
+      await Future.delayed(Duration(milliseconds: 50));
+
+      expect(events.length, 2);
+      expect(events[0].value, {'doubled': 0});
+      expect(events[1].value, {'doubled': 4});
     });
   });
   group("autoDispose", () {
@@ -462,6 +604,7 @@ void main() async {
 
       expect(await future, -1);
     });
+
     test('false', () async {
       final number = signal(2);
       final events = [];
@@ -487,6 +630,87 @@ void main() async {
       await Future.delayed(Duration(milliseconds: 50));
       expect(events, [4]);
       expectLater(await future, 4);
+      expect(futureThrew, false);
+    });
+
+    test('with initialValue - autoDispose true', () async {
+      final number = signal(3);
+      final events = [];
+      final squared = ComputedFuture(
+        number,
+        (state, input) async {
+          await Future.delayed(Duration(milliseconds: 30));
+          final result = input * input;
+          if (state.isCanceled) {
+            throw Exception();
+          }
+          events.add(result);
+          return result;
+        },
+        initialValue: 1,
+        autoDispose: true,
+      );
+
+      // Should start with initial value
+      expect(squared.peek(), AsyncState.data(1));
+
+      final future = squared.future.onError((error, stackTrace) => -1);
+
+      final dispose = effect(() {
+        squared.value;
+      });
+
+      // Should start with initial value
+      expect(squared.value, AsyncState.data(1));
+
+      await Future.delayed(Duration(milliseconds: 15));
+      dispose(); // Cancel before computation completes
+      await Future.delayed(Duration(milliseconds: 50));
+
+      expect(events, []); // No computation should complete
+      expect(await future, -1);
+    });
+
+    test('with initialValue - autoDispose false', () async {
+      final number = signal(3);
+      final events = [];
+      final squared = ComputedFuture(
+        number,
+        (state, input) async {
+          await Future.delayed(Duration(milliseconds: 30));
+          final result = input * input;
+          if (state.isCanceled) {
+            throw Exception();
+          }
+          events.add(result);
+          return result;
+        },
+        initialValue: 2,
+        autoDispose: false,
+      );
+
+      // Should start with initial value
+      expect(squared.peek(), AsyncState.data(2));
+
+      bool futureThrew = false;
+      final future = squared.future.onError((error, stackTrace) {
+        futureThrew = true;
+        return 0;
+      });
+
+      final dispose = effect(() {
+        squared.value;
+      });
+
+      // Should start with initial value
+      expect(squared.value, AsyncState.data(2));
+
+      await Future.delayed(Duration(milliseconds: 15));
+      dispose(); // Dispose effect but computation should continue
+      await Future.delayed(Duration(milliseconds: 50));
+
+      expect(events, [9]); // Computation should complete
+      expect(await future, 9);
       expect(futureThrew, false);
     });
   });
@@ -522,6 +746,41 @@ void main() async {
       expect(events[3].error, isA<Exception>());
     });
 
+    test('lazy with error and initialValue - no loading state', () async {
+      final number = signal(2);
+      final squared = ComputedFuture(number, (state, input) async {
+        if (input == 4) {
+          throw Exception('Test error');
+        }
+        return input * input;
+      }, initialValue: 0);
+
+      // Should never show loading state with initialValue
+      expect(squared.peek(), AsyncState.data(0));
+
+      final events = [];
+      effect(() {
+        events.add(squared.value);
+      });
+
+      // Should start with initial value
+      expect(events, [AsyncState.data(0)]);
+
+      await Future.delayed(Duration(milliseconds: 100));
+      expect(events.length, 2);
+      expect(events[0], AsyncState.data(0));
+      expect(events[1], AsyncState.data(4));
+
+      // Trigger error
+      number.value = 4;
+      await Future.delayed(Duration(milliseconds: 100));
+
+      expect(events.length, 4);
+      expect(events[2], AsyncState.loading()); // Loading when signal changes
+      expect(events[3].hasError, true);
+      expect(events[3].error, isA<Exception>());
+    });
+
     test('eager with error', () async {
       final number = signal(4);
       final squared = ComputedFuture(number, (state, input) async {
@@ -534,6 +793,40 @@ void main() async {
       await Future.delayed(Duration(milliseconds: 100));
       expect(squared.peek().hasError, true);
       expect(squared.peek().error, isA<Exception>());
+    });
+
+    test('eager with error and initialValue - no loading state', () async {
+      final number = signal(4);
+      final squared = ComputedFuture(
+        number,
+        (state, input) async {
+          if (input == 4) {
+            throw Exception('Test error');
+          }
+          return input * input;
+        },
+        initialValue: 1,
+        lazy: false,
+      );
+
+      // Should start with initial value immediately
+      expect(squared.peek(), AsyncState.data(1));
+
+      final events = [];
+      effect(() {
+        events.add(squared.value);
+      });
+
+      // Should start with initial value
+      expect(events, [AsyncState.data(1)]);
+
+      await Future.delayed(Duration(milliseconds: 100));
+
+      // Should show error state, not loading
+      expect(events.length, 2);
+      expect(events[0], AsyncState.data(1));
+      expect(events[1].hasError, true);
+      expect(events[1].error, isA<Exception>());
     });
 
     test('error recovery', () async {
@@ -549,6 +842,32 @@ void main() async {
       effect(() {
         events.add(squared.value);
       });
+
+      await Future.delayed(Duration(milliseconds: 100));
+      expect(events.last.hasError, true);
+
+      // Recover from error
+      number.value = 2;
+      await Future.delayed(Duration(milliseconds: 100));
+      expect(events.last, AsyncState.data(4));
+    });
+
+    test('error recovery with initialValue', () async {
+      final number = signal(4);
+      final squared = ComputedFuture(number, (state, input) async {
+        if (input == 4) {
+          throw Exception('Test error');
+        }
+        return input * input;
+      }, initialValue: 0);
+
+      final events = <AsyncState>[];
+      effect(() {
+        events.add(squared.value);
+      });
+
+      // Should start with initial value
+      expect(events, [AsyncState.data(0)]);
 
       await Future.delayed(Duration(milliseconds: 100));
       expect(events.last.hasError, true);
@@ -1081,6 +1400,141 @@ void main() async {
       number.value = 3;
       await Future.delayed(Duration(milliseconds: 100));
       expect(result.value.value, 11); // (3 * 2) + 5 = 11
+    });
+
+    test('chain with initialValue - no loading states', () async {
+      final number = signal(3);
+
+      // First computation with initial value
+      final doubled = ComputedFuture(number, (state, input) async {
+        await Future.delayed(Duration(milliseconds: 20));
+        return input * 2;
+      }, initialValue: 0);
+
+      // Second computation with initial value
+      final squared = ComputedFuture(doubled, (state, doubledState) async {
+        await Future.delayed(Duration(milliseconds: 20));
+        final doubledValue = doubledState.requireValue;
+        return doubledValue * doubledValue;
+      }, initialValue: 1);
+
+      // Should never show loading states
+      expect(doubled.peek(), AsyncState.data(0));
+      expect(squared.peek(), AsyncState.data(1));
+
+      final events = [];
+      effect(() {
+        events.add(squared.value);
+      });
+
+      // Should start with initial value
+      expect(events, [AsyncState.data(1)]);
+
+      await Future.delayed(Duration(milliseconds: 100));
+
+      // Should update to computed value (may show loading state when first computation updates)
+      expect(events.length, 3);
+      expect(events[0], AsyncState.data(1)); // Initial value
+      expect(
+        events[1],
+        AsyncState.loading(),
+      ); // Loading when first computation updates
+      expect(events[2], AsyncState.data(36)); // Final computed value
+    });
+
+    test('chain with initialValue - different types', () async {
+      final text = signal('hello');
+
+      // First: get length with initial value
+      final length = ComputedFuture(text, (state, input) async {
+        await Future.delayed(Duration(milliseconds: 15));
+        return input.length;
+      }, initialValue: 0);
+
+      // Second: create list with initial value
+      final list = ComputedFuture(length, (state, lengthState) async {
+        await Future.delayed(Duration(milliseconds: 15));
+        final lengthValue = lengthState.requireValue;
+        return List.generate(lengthValue, (i) => i);
+      }, initialValue: <int>[]);
+
+      // Third: sum with initial value
+      final sum = ComputedFuture(list, (state, listState) async {
+        await Future.delayed(Duration(milliseconds: 15));
+        final listValue = listState.requireValue;
+        return listValue.isEmpty ? 0 : listValue.reduce((a, b) => a + b);
+      }, initialValue: -1);
+
+      // Should never show loading states
+      expect(length.peek().value, 0);
+      expect(list.peek().value, <int>[]);
+      expect(sum.peek().value, -1);
+
+      final events = [];
+      effect(() {
+        events.add(sum.value);
+      });
+
+      // Should start with initial value
+      expect(events.length, 1);
+      expect(events[0].value, -1);
+
+      await Future.delayed(Duration(milliseconds: 100));
+
+      // Should update to computed value (may show loading states when previous computations update)
+      expect(events.length, 4); // Initial + 3 loading states + final
+      expect(events[0].value, -1); // Initial value
+      expect(
+        events.last.value,
+        10,
+      ); // Final computed value [0,1,2,3,4] sum = 10
+    });
+
+    test('chain with initialValue - error handling', () async {
+      final number = signal(5); // Triggers error
+
+      // First computation with initial value
+      final processed = ComputedFuture(number, (state, input) async {
+        await Future.delayed(Duration(milliseconds: 20));
+        if (input == 5) {
+          throw Exception('Processing error');
+        }
+        return input * 2;
+      }, initialValue: 0);
+
+      // Second computation with initial value
+      final result = ComputedFuture(processed, (state, processedState) async {
+        await Future.delayed(Duration(milliseconds: 20));
+        if (processedState.hasError) {
+          throw Exception('Chain error: ${processedState.error}');
+        }
+        final processedValue = processedState.requireValue;
+        return processedValue + 10;
+      }, initialValue: -1);
+
+      // Should never show loading states
+      expect(processed.peek(), AsyncState.data(0));
+      expect(result.peek(), AsyncState.data(-1));
+
+      final events = [];
+      effect(() {
+        events.add(result.value);
+      });
+
+      // Should start with initial value
+      expect(events, [AsyncState.data(-1)]);
+
+      await Future.delayed(Duration(milliseconds: 100));
+
+      // Should show error state (may show loading state when first computation updates)
+      expect(events.length, 3);
+      expect(events[0], AsyncState.data(-1)); // Initial value
+      expect(
+        events[1],
+        AsyncState.loading(),
+      ); // Loading when first computation updates
+      expect(events[2].hasError, true); // Error state
+      expect(events[2].error.toString(), contains('Chain error'));
     });
   });
   test('multiple onCancel callbacks', () async {

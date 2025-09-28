@@ -1,3 +1,7 @@
+## 2.0.1
+
+- Some documentation updates
+
 ## 2.0.0
 
 - Add `restart` method to `ComputedFuture`

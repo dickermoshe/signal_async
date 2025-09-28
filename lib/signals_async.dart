@@ -223,7 +223,7 @@ abstract class ComputedFuture<Output, Input>
 ///
 /// effect(() {
 ///   final state = streamSignal.value;
-///   if (state.hasValue) {
+///   if (state is AsyncData) {
 ///     print('Stream value: ${state.value}');
 ///   }
 /// });
@@ -242,9 +242,9 @@ abstract class ComputedFuture<Output, Input>
 ///
 /// effect(() {
 ///   final state = websocketStream.value;
-///   if (state.hasValue) {
+///   if (state is AsyncData) {
 ///     print('Received: ${state.value}');
-///   } else if (state.hasError) {
+///   } else if (state is AsyncError) {
 ///     print('WebSocket error: ${state.error}');
 ///   }
 /// });
